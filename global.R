@@ -5,15 +5,23 @@
 library(shiny)
 library(tidyverse)
 
-# Read once, share everywhere
-house <- readr::read_csv("global_house_purchase_dataset.csv",
-                         show_col_types = FALSE)
+# Read once, share everywhere -------------------------------------------
 
-# Helpers --------------------------------------------------------------
+# Using base R's read.csv()
+# stringsAsFactors = FALSE ensures text columns stay as characters (not factors)
+house <- read.csv("global_house_purchase_dataset.csv",
+                  stringsAsFactors = FALSE)
+
+# Helpers ---------------------------------------------------------------
 
 # Columns by type (used to populate UI controls)
-num_cols <- house %>% select(where(is.numeric)) %>% names()
-cat_cols <- house %>% select(where(function(x) is.character(x) || is.factor(x))) %>% names()
+num_cols <- house %>%
+  select(where(is.numeric)) %>%
+  names()
 
-# A tiny, safe sample preview
+cat_cols <- house %>%
+  select(where(function(x) is.character(x) || is.factor(x))) %>%
+  names()
+
+# A tiny, safe sample preview (used in the Overview tab)
 house_head <- head(house, 10)

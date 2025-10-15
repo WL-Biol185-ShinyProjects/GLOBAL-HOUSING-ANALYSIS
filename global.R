@@ -4,6 +4,7 @@
 # global.R — shared by ui.R and server.R
 library(shiny)
 library(tidyverse)
+library(leaflet)
 
 # Read once, share everywhere -------------------------------------------
 

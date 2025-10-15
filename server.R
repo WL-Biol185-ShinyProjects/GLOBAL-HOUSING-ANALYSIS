@@ -4,21 +4,60 @@ source("global.R")
 
 shinyServer(function(input, output, session) {
   
-  # Overview ------------------------------------------------------------
-  
-  output$tbl_head <- renderTable({
-    house_head
-  }, striped = TRUE, spacing = "s")
-  
-  output$tbl_types <- renderTable({
-    tibble(
-      column = names(house),
-      type   = map_chr(house, ~ class(.x)[1])
+  # --------------------------------------------------------------------
+  # Overview: image placeholder, stats, brief intro
+  #   - relies on dataset_stats computed once in global.R
+  # --------------------------------------------------------------------
+  output$overview_image_placeholder <- renderUI({
+    tags$div(
+      style = paste(
+        "height: 240px; border: 2px dashed #bbb;",
+        "border-radius: 8px; display: flex; align-items: center;",
+        "justify-content: center; background-color: #fcfcfc;"
+      ),
+      tags$span(
+        style = "color:#888;",
+        "Image placeholder — add visualization or header image here"
+      )
     )
-  }, striped = TRUE, spacing = "s")
+  })
   
-  # Histogram -----------------------------------------------------------
+  output$overview_stats <- renderUI({
+    tags$ul(
+      tags$li(
+        sprintf(
+          "Homes with build dates back to %s.",
+          dataset_stats$min_constructed_year
+        )
+      ),
+      tags$li(
+        sprintf(
+          "Data from %s countries and %s cities.",
+          dataset_stats$n_countries,
+          dataset_stats$n_cities
+        )
+      ),
+      tags$li(
+        sprintf(
+          "%s purchase decision datapoints.",
+          format(dataset_stats$n_rows, big.mark = ",")
+        )
+      )
+    )
+  })
   
+  output$overview_intro <- renderUI({
+    tags$p(
+      "Use this application to explore housing purchase patterns across major global cities. ",
+      "Start with the Histogram tab to examine the distribution of prices or other numeric features, ",
+      "optionally grouped by a categorical field. Then use the Scatter tab for quick two-variable ",
+      "relationships (e.g., property size vs. price)."
+    )
+  })
+  
+  # --------------------------------------------------------------------
+  # Histogram
+  # --------------------------------------------------------------------
   chosen_num <- reactive({
     req(input$x_num %in% names(house))
     house %>%
@@ -58,8 +97,9 @@ shinyServer(function(input, output, session) {
     summary(chosen_num())
   })
   
-  # Scatter -------------------------------------------------------------
-  
+  # --------------------------------------------------------------------
+  # Scatter
+  # --------------------------------------------------------------------
   output$plot_scatter <- renderPlot({
     req(input$scatter_x %in% names(house))
     req(input$scatter_y %in% names(house))

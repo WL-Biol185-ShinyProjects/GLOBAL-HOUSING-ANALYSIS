@@ -6,14 +6,18 @@ library(shiny)
 library(tidyverse)
 library(leaflet)
 
-# Read once, share everywhere -------------------------------------------
+# ---------------------------------------------------------------------
+# Read once, share everywhere
+# ---------------------------------------------------------------------
 
 # Using base R's read.csv()
 # stringsAsFactors = FALSE ensures text columns stay as characters (not factors)
 house <- read.csv("global_house_purchase_dataset.csv",
                   stringsAsFactors = FALSE)
 
-# Helpers ---------------------------------------------------------------
+# ---------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------
 
 # Columns by type (used to populate UI controls)
 num_cols <- house %>%
@@ -26,3 +30,13 @@ cat_cols <- house %>%
 
 # A tiny, safe sample preview (used in the Overview tab)
 house_head <- head(house, 10)
+
+# ---------------------------------------------------------------------
+# Dataset stats for the Overview tab (computed once)
+# ---------------------------------------------------------------------
+dataset_stats <- list(
+  min_constructed_year = min(house$constructed_year, na.rm = TRUE),
+  n_countries          = dplyr::n_distinct(house$country),
+  n_cities             = dplyr::n_distinct(house$city),
+  n_rows               = nrow(house)
+)

@@ -20,17 +20,6 @@ shinyServer(function(input, output, session) {
     )
   })
   
-  output$overview_stats <- renderUI({
-    tags$ul(
-      tags$li(sprintf("Homes with build dates back to %s.",
-                      dataset_stats$min_constructed_year)),
-      tags$li(sprintf("Data from %s countries and %s cities.",
-                      dataset_stats$n_countries, dataset_stats$n_cities)),
-      tags$li(sprintf("%s purchase decision datapoints.",
-                      format(dataset_stats$n_rows, big.mark = ",")))
-    )
-  })
-  
   output$overview_intro <- renderUI({
     tags$p(
       "Use this application to explore housing purchase patterns across major global cities. ",
@@ -39,10 +28,46 @@ shinyServer(function(input, output, session) {
     )
   })
   
+  # Value boxes
+  output$vb_min_year <- renderValueBox({
+    valueBox(
+      subtitle = "Earliest Build Year",
+      value = dataset_stats$min_constructed_year,
+      icon = icon("calendar"),
+      color = "teal"
+    )
+  })
+  
+  output$vb_countries <- renderValueBox({
+    valueBox(
+      subtitle = "Countries",
+      value = dataset_stats$n_countries,
+      icon = icon("globe"),
+      color = "aqua"
+    )
+  })
+  
+  output$vb_cities <- renderValueBox({
+    valueBox(
+      subtitle = "Cities",
+      value = dataset_stats$n_cities,
+      icon = icon("city"),
+      color = "blue"
+    )
+  })
+  
+  output$vb_rows <- renderValueBox({
+    valueBox(
+      subtitle = "Datapoints",
+      value = format(dataset_stats$n_rows, big.mark = ","),
+      icon = icon("database"),
+      color = "purple"
+    )
+  })
+  
   # ====================================================================
   # CURRENCY NORMALIZATION LAYER (for Market Insights + Map)
   # ====================================================================
-  # NOTE: currency_map, fx_rates, fx_available are created in global.R
   
   base_df <- reactive({
     house %>%
@@ -74,7 +99,6 @@ shinyServer(function(input, output, session) {
   # Robust formatters (no crashes on NA/NaN/Inf)
   # --------------------------------------------------------------------
   pretty_si <- function(x, accuracy = 0.1) {
-    # convert NaN/Inf to NA
     x[!is.finite(x)] <- NA_real_
     out <- ifelse(
       is.na(x), NA_character_,
@@ -211,8 +235,6 @@ shinyServer(function(input, output, session) {
   # ====================================================================
   # (e) INTERACTIVE MAP (country view -> click -> city view)
   # ====================================================================
-  
-  # Initial render: country-level markers, currency-aware
   output$map_prices <- renderLeaflet({
     df_c <- df_price() %>%
       dplyr::group_by(country) %>%
@@ -240,7 +262,6 @@ shinyServer(function(input, output, session) {
       )
   })
   
-  # Drill-down: on click, show cities for that country (currency-aware)
   observeEvent(input$map_prices_marker_click, {
     click <- input$map_prices_marker_click
     req(click$id %in% country_coords$country)

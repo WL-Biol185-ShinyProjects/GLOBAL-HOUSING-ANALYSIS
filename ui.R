@@ -13,97 +13,93 @@ shinyUI(
       tabPanel(
         "Overview",
         br(),
-        # a) Space for an image (we’ll wire the real image later)
         uiOutput("overview_image_placeholder"),
         br(),
-        
-        # b) Clear message about scope (major cities)
         tags$div(
           style = "padding: 10px; background-color: #f7f7f7; border-radius: 8px;",
           tags$strong("Global Major Cities Housing Purchase Analysis"),
-          tags$p(
-            "This app focuses on housing purchase data across major global cities."
-          )
+          tags$p("This app focuses on housing purchase data across major global cities.")
         ),
         br(),
-        
-        # c) Stats about the dataset
         tags$h4("Quick Stats"),
         uiOutput("overview_stats"),
         br(),
-        
-        # d) Brief introduction
         tags$h4("What this site does"),
         uiOutput("overview_intro")
       ),
       
       # ----------------------------------------------------------------
-      # Histogram (sidebar present ONLY here)
+      # Descriptive Market Insights w/ Interactive Map
       # ----------------------------------------------------------------
       tabPanel(
-        "Histogram",
-        sidebarLayout(
-          sidebarPanel(
-            selectInput(
-              inputId   = "x_num",
-              label     = "Numeric column for histogram:",
-              choices   = num_cols,
-              selected  = "price"
-            ),
-            sliderInput(
-              inputId   = "bins",
-              label     = "Bins:",
-              min       = 10,
-              max       = 100,
-              value     = 30,
-              step      = 5
-            ),
-            selectInput(
-              inputId   = "group_cat",
-              label     = "Optional group (color) by category:",
-              choices   = c("None", cat_cols),
-              selected  = "None"
-            ),
-            checkboxInput(
-              inputId   = "log_x",
-              label     = "Log scale (x-axis)",
-              value     = FALSE
-            )
-          ),
-          mainPanel(
-            plotOutput("plot_hist"),
-            br(),
-            verbatimTextOutput("txt_summary")
-          )
-        )
-      ),
-      
-      # ----------------------------------------------------------------
-      # Scatter (no sidebar)
-      # ----------------------------------------------------------------
-      tabPanel(
-        "Scatter (quick look)",
+        "Descriptive Market Insights w/ Interactive Map",
+        
+        # a) Currency basis selector
         fluidRow(
           column(
             width = 6,
             selectInput(
-              inputId   = "scatter_x",
-              label     = "X (numeric):",
-              choices   = num_cols,
-              selected  = "property_size_sqft"
+              inputId  = "currency_basis",
+              label    = "Currency basis",
+              choices  = c("Local currency", "USD (FX, nominal)"),
+              selected = "Local currency"
             )
           ),
           column(
             width = 6,
-            selectInput(
-              inputId   = "scatter_y",
-              label     = "Y (numeric):",
-              choices   = num_cols,
-              selected  = "price"
-            )
+            uiOutput("fx_note", inline = TRUE)
           )
         ),
-        plotOutput("plot_scatter")
+        br(),
+        
+        # b) Avg prices by country / city / property type
+        h4("Average house prices"),
+        fluidRow(
+          column(
+            width = 4,
+            h5("By Country"),
+            tableOutput("tbl_avg_country")
+          ),
+          column(
+            width = 4,
+            h5("By City"),
+            tableOutput("tbl_avg_city")
+          ),
+          column(
+            width = 4,
+            h5("By Property Type"),
+            tableOutput("tbl_avg_property")
+          )
+        ),
+        br(),
+        
+        # c) Size vs Price line chart
+        h4("Trends: Property size vs Price"),
+        plotOutput("plot_size_price", height = "300px"),
+        br(),
+        
+        # d) Amenities in high-value homes
+        h4("Amenities most common in high-value homes"),
+        plotOutput("plot_amenities_hv", height = "280px"),
+        br(),
+        
+        # e) Age impact
+        h4("Age of house impact on value"),
+        plotOutput("plot_age_impact", height = "280px"),
+        br(),
+        
+        # f) Interactive map
+        h4("Interactive Map of Average Prices"),
+        p("Hover on a country to see the average price. Click a country to drill into its cities."),
+        # Wrap the map in a positioned container and overlay a reset button
+        div(
+          style = "position: relative;",
+          leafletOutput("map_prices", height = 500),
+          tags$div(
+            style = "position: absolute; top: 15px; right: 15px; z-index: 1000;",
+            actionButton("btn_reset_map", "Back to Global View", class = "btn-primary")
+          )
+        )
       )
     )
   )

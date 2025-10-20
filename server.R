@@ -3,11 +3,9 @@
 source("global.R")
 
 shinyServer(function(input, output, session) {
-  
-  # --------------------------------------------------------------------
-  # Overview: image placeholder, stats, brief intro
-  #   - relies on dataset_stats computed once in global.R
-  # --------------------------------------------------------------------
+  # ====================================================================
+  # OVERVIEW TAB
+  # ====================================================================
   output$overview_image_placeholder <- renderUI({
     tags$div(
       style = paste(
@@ -24,95 +22,282 @@ shinyServer(function(input, output, session) {
   
   output$overview_stats <- renderUI({
     tags$ul(
-      tags$li(
-        sprintf(
-          "Homes with build dates back to %s.",
-          dataset_stats$min_constructed_year
-        )
-      ),
-      tags$li(
-        sprintf(
-          "Data from %s countries and %s cities.",
-          dataset_stats$n_countries,
-          dataset_stats$n_cities
-        )
-      ),
-      tags$li(
-        sprintf(
-          "%s purchase decision datapoints.",
-          format(dataset_stats$n_rows, big.mark = ",")
-        )
-      )
+      tags$li(sprintf("Homes with build dates back to %s.",
+                      dataset_stats$min_constructed_year)),
+      tags$li(sprintf("Data from %s countries and %s cities.",
+                      dataset_stats$n_countries, dataset_stats$n_cities)),
+      tags$li(sprintf("%s purchase decision datapoints.",
+                      format(dataset_stats$n_rows, big.mark = ",")))
     )
   })
   
   output$overview_intro <- renderUI({
     tags$p(
       "Use this application to explore housing purchase patterns across major global cities. ",
-      "Start with the Histogram tab to examine the distribution of prices or other numeric features, ",
-      "optionally grouped by a categorical field. Then use the Scatter tab for quick two-variable ",
-      "relationships (e.g., property size vs. price)."
+      "The Descriptive Market Insights tab summarizes prices, size–price trends, amenities in high-value homes, ",
+      "and the relationship between home age and value. An interactive map lets you drill from country to city."
     )
   })
   
-  # --------------------------------------------------------------------
-  # Histogram
-  # --------------------------------------------------------------------
-  chosen_num <- reactive({
-    req(input$x_num %in% names(house))
+  # ====================================================================
+  # CURRENCY NORMALIZATION LAYER (for Market Insights + Map)
+  # ====================================================================
+  # NOTE: currency_map, fx_rates, fx_available are created in global.R
+  
+  base_df <- reactive({
     house %>%
-      select(all_of(input$x_num)) %>%
-      drop_na() %>%
-      pull()
+      dplyr::left_join(currency_map, by = "country") %>%
+      dplyr::left_join(fx_rates, by = "currency") %>%
+      dplyr::mutate(rate_to_usd = dplyr::coalesce(rate_to_usd, 1))
   })
   
-  output$plot_hist <- renderPlot({
-    x_vals <- chosen_num()
-    req(length(x_vals) > 0)
-    
-    df <- tibble(x = x_vals)
-    
-    if (input$group_cat != "None") {
-      grp <- house[[input$group_cat]]
-      df  <- tibble(x = x_vals, g = grp) %>% drop_na()
-      gg  <- ggplot(df, aes(x = x, fill = g)) +
-        geom_histogram(bins = input$bins, alpha = 0.7, position = "identity")
+  output$fx_note <- renderUI({
+    if (identical(input$currency_basis, "USD (FX, nominal)") && !fx_available) {
+      tags$div(
+        style = "padding:6px 10px; background:#fff3cd; border:1px solid #ffeeba; border-radius:6px;",
+        tags$small("USD conversion needs an FX table (fx_rates_static.csv). Showing local currency instead.")
+      )
+    } else NULL
+  })
+  
+  df_price <- reactive({
+    df <- base_df()
+    use_usd <- identical(input$currency_basis, "USD (FX, nominal)") && fx_available
+    df %>%
+      dplyr::mutate(
+        price_display = if (use_usd) price * rate_to_usd else price,
+        price_is_usd  = use_usd
+      )
+  })
+  
+  # --------------------------------------------------------------------
+  # Robust formatters (no crashes on NA/NaN/Inf)
+  # --------------------------------------------------------------------
+  pretty_si <- function(x, accuracy = 0.1) {
+    # convert NaN/Inf to NA
+    x[!is.finite(x)] <- NA_real_
+    out <- ifelse(
+      is.na(x), NA_character_,
+      ifelse(
+        abs(x) >= 1e9, paste0(scales::number(x / 1e9, accuracy = accuracy), "B"),
+        ifelse(
+          abs(x) >= 1e6, paste0(scales::number(x / 1e6, accuracy = accuracy), "M"),
+          ifelse(
+            abs(x) >= 1e3, paste0(scales::number(x / 1e3, accuracy = accuracy), "k"),
+            scales::number(x, accuracy = accuracy)
+          )
+        )
+      )
+    )
+    out
+  }
+  
+  fmt_money <- function(x) {
+    if (isTruthy(input$currency_basis) &&
+        identical(input$currency_basis, "USD (FX, nominal)") &&
+        fx_available) {
+      scales::dollar(x)   # handles NA
     } else {
-      gg  <- ggplot(df, aes(x = x)) +
-        geom_histogram(bins = input$bins)
+      pretty_si(x)
     }
-    
-    gg <- gg +
-      labs(x = input$x_num, y = "Count", fill = input$group_cat) +
-      theme_minimal()
-    
-    if (isTRUE(input$log_x)) {
-      gg <- gg + scale_x_log10()
-    }
-    
-    gg
+  }
+  
+  # ====================================================================
+  # (a) AVERAGE PRICES TABLES (country / city / property type)
+  # ====================================================================
+  output$tbl_avg_country <- renderTable({
+    df_price() %>%
+      dplyr::group_by(country) %>%
+      dplyr::summarise(avg_price = mean(price_display, na.rm = TRUE), .groups = "drop") %>%
+      dplyr::mutate(avg_price = dplyr::if_else(is.nan(avg_price), NA_real_, avg_price)) %>%
+      dplyr::filter(is.finite(avg_price) | is.na(avg_price)) %>%
+      dplyr::arrange(dplyr::desc(avg_price)) %>%
+      dplyr::mutate(`Average price` = fmt_money(avg_price)) %>%
+      dplyr::select(country, `Average price`)
+  }, striped = TRUE, spacing = "s")
+  
+  output$tbl_avg_city <- renderTable({
+    df_price() %>%
+      dplyr::group_by(country, city) %>%
+      dplyr::summarise(avg_price = mean(price_display, na.rm = TRUE), .groups = "drop") %>%
+      dplyr::mutate(avg_price = dplyr::if_else(is.nan(avg_price), NA_real_, avg_price)) %>%
+      dplyr::filter(is.finite(avg_price) | is.na(avg_price)) %>%
+      dplyr::arrange(country, dplyr::desc(avg_price)) %>%
+      dplyr::mutate(`Average price` = fmt_money(avg_price)) %>%
+      dplyr::select(country, city, `Average price`)
+  }, striped = TRUE, spacing = "s")
+  
+  output$tbl_avg_property <- renderTable({
+    df_price() %>%
+      dplyr::group_by(property_type) %>%
+      dplyr::summarise(avg_price = mean(price_display, na.rm = TRUE), .groups = "drop") %>%
+      dplyr::mutate(avg_price = dplyr::if_else(is.nan(avg_price), NA_real_, avg_price)) %>%
+      dplyr::filter(is.finite(avg_price) | is.na(avg_price)) %>%
+      dplyr::arrange(dplyr::desc(avg_price)) %>%
+      dplyr::mutate(`Average price` = fmt_money(avg_price)) %>%
+      dplyr::select(property_type, `Average price`)
+  }, striped = TRUE, spacing = "s")
+  
+  # ====================================================================
+  # (b) SIZE vs PRICE CURVE (binned sqft)
+  # ====================================================================
+  output$plot_size_price <- renderPlot({
+    df_price() %>%
+      dplyr::mutate(
+        size_bin = cut(
+          property_size_sqft,
+          breaks = quantile(property_size_sqft, probs = seq(0, 1, 0.05), na.rm = TRUE),
+          include.lowest = TRUE, dig.lab = 8
+        )
+      ) %>%
+      dplyr::group_by(size_bin) %>%
+      dplyr::summarise(
+        avg_price = mean(price_display, na.rm = TRUE),
+        avg_sqft  = mean(property_size_sqft, na.rm = TRUE),
+        n = dplyr::n(), .groups = "drop"
+      ) %>%
+      dplyr::mutate(
+        avg_price = dplyr::if_else(is.nan(avg_price), NA_real_, avg_price),
+        avg_sqft  = dplyr::if_else(is.nan(avg_sqft),  NA_real_, avg_sqft)
+      ) %>%
+      dplyr::filter(is.finite(avg_price), is.finite(avg_sqft)) %>%
+      ggplot2::ggplot(ggplot2::aes(x = avg_sqft, y = avg_price, group = 1)) +
+      ggplot2::geom_line(linewidth = 1) +
+      ggplot2::geom_point(alpha = 0.6) +
+      ggplot2::labs(x = "Average sqft (bin center)", y = NULL, title = "Property size vs. price (binned)") +
+      ggplot2::scale_y_continuous(labels = fmt_money) +
+      ggplot2::theme_minimal()
   })
   
-  output$txt_summary <- renderPrint({
-    summary(chosen_num())
+  # ====================================================================
+  # (c) AMENITIES IN HIGH-VALUE HOMES (top quartile by chosen currency)
+  # ====================================================================
+  output$plot_amenities_hv <- renderPlot({
+    df <- df_price()
+    q3 <- stats::quantile(df$price_display, 0.75, na.rm = TRUE)
+    df %>%
+      dplyr::mutate(is_high_value = price_display >= q3) %>%
+      dplyr::filter(is_high_value) %>%
+      dplyr::summarise(
+        garage_share = mean(garage == 1, na.rm = TRUE),
+        garden_share = mean(garden == 1, na.rm = TRUE)
+      ) %>%
+      tidyr::pivot_longer(dplyr::everything(), names_to = "amenity", values_to = "share") %>%
+      dplyr::mutate(amenity = dplyr::recode(amenity, garage_share = "Garage", garden_share = "Garden")) %>%
+      ggplot2::ggplot(ggplot2::aes(x = amenity, y = share)) +
+      ggplot2::geom_col() +
+      ggplot2::scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
+      ggplot2::labs(x = NULL, y = "Share of high-value homes", title = "Amenities in top-quartile priced homes") +
+      ggplot2::theme_minimal()
   })
   
-  # --------------------------------------------------------------------
-  # Scatter
-  # --------------------------------------------------------------------
-  output$plot_scatter <- renderPlot({
-    req(input$scatter_x %in% names(house))
-    req(input$scatter_y %in% names(house))
-    
-    df <- house %>%
-      select(all_of(c(input$scatter_x, input$scatter_y))) %>%
-      drop_na()
-    
-    ggplot(df, aes(x = .data[[input$scatter_x]],
-                   y = .data[[input$scatter_y]])) +
-      geom_point(alpha = 0.5) +
-      labs(x = input$scatter_x, y = input$scatter_y) +
-      theme_minimal()
+  # ====================================================================
+  # (d) AGE OF HOUSE IMPACT (constructed_year vs avg price)
+  # ====================================================================
+  output$plot_age_impact <- renderPlot({
+    df_price() %>%
+      dplyr::group_by(constructed_year) %>%
+      dplyr::summarise(avg_price = mean(price_display, na.rm = TRUE), .groups = "drop") %>%
+      dplyr::mutate(avg_price = dplyr::if_else(is.nan(avg_price), NA_real_, avg_price)) %>%
+      dplyr::filter(is.finite(avg_price), is.finite(constructed_year)) %>%
+      dplyr::arrange(constructed_year) %>%
+      ggplot2::ggplot(ggplot2::aes(x = constructed_year, y = avg_price)) +
+      ggplot2::geom_line(linewidth = 1) +
+      ggplot2::labs(x = "Constructed year", y = NULL, title = "Home age (constructed year) vs. average price") +
+      ggplot2::scale_y_continuous(labels = fmt_money) +
+      ggplot2::theme_minimal()
   })
   
+  # ====================================================================
+  # (e) INTERACTIVE MAP (country view -> click -> city view)
+  # ====================================================================
+  
+  # Initial render: country-level markers, currency-aware
+  output$map_prices <- renderLeaflet({
+    df_c <- df_price() %>%
+      dplyr::group_by(country) %>%
+      dplyr::summarise(avg_price = mean(price_display, na.rm = TRUE), .groups = "drop") %>%
+      dplyr::mutate(avg_price = dplyr::if_else(is.nan(avg_price), NA_real_, avg_price)) %>%
+      dplyr::filter(is.finite(avg_price)) %>%
+      dplyr::inner_join(country_coords, by = "country")
+    
+    leaflet() %>%
+      addProviderTiles(providers$CartoDB.Positron) %>%
+      setView(lng = 10, lat = 20, zoom = 2) %>%
+      addCircleMarkers(
+        data    = df_c,
+        lng     = ~lng, lat = ~lat,
+        radius  = ~scales::rescale(avg_price, to = c(6, 16)),
+        label   = ~paste0(
+          country, ": ",
+          if (identical(input$currency_basis, "USD (FX, nominal)") && fx_available)
+            scales::dollar(round(avg_price, 0))
+          else
+            pretty_si(round(avg_price, 0))
+        ),
+        layerId = ~country,
+        stroke  = FALSE, fillOpacity = 0.7
+      )
+  })
+  
+  # Drill-down: on click, show cities for that country (currency-aware)
+  observeEvent(input$map_prices_marker_click, {
+    click <- input$map_prices_marker_click
+    req(click$id %in% country_coords$country)
+    
+    df_city <- df_price() %>%
+      dplyr::group_by(country, city) %>%
+      dplyr::summarise(avg_price = mean(price_display, na.rm = TRUE), .groups = "drop") %>%
+      dplyr::mutate(avg_price = dplyr::if_else(is.nan(avg_price), NA_real_, avg_price)) %>%
+      dplyr::filter(country == click$id, is.finite(avg_price)) %>%
+      dplyr::inner_join(city_coords, by = c("country", "city"))
+    
+    if (nrow(df_city) == 0) return()
+    
+    leafletProxy("map_prices") %>%
+      clearMarkers() %>%
+      addCircleMarkers(
+        data    = df_city,
+        lng     = ~lng, lat = ~lat,
+        radius  = ~scales::rescale(avg_price, to = c(5, 14)),
+        label   = ~paste0(
+          city, ": ",
+          if (identical(input$currency_basis, "USD (FX, nominal)") && fx_available)
+            scales::dollar(round(avg_price, 0))
+          else
+            pretty_si(round(avg_price, 0))
+        ),
+        stroke  = FALSE, fillOpacity = 0.75
+      ) %>%
+      fitBounds(lng1 = min(df_city$lng), lat1 = min(df_city$lat),
+                lng2 = max(df_city$lng), lat2 = max(df_city$lat))
+  })
+  
+  # Reset overlay button (in UI) -> back to global country view
+  observeEvent(input$btn_reset_map, {
+    df_c <- df_price() %>%
+      dplyr::group_by(country) %>%
+      dplyr::summarise(avg_price = mean(price_display, na.rm = TRUE), .groups = "drop") %>%
+      dplyr::mutate(avg_price = dplyr::if_else(is.nan(avg_price), NA_real_, avg_price)) %>%
+      dplyr::filter(is.finite(avg_price)) %>%
+      dplyr::inner_join(country_coords, by = "country")
+    
+    leafletProxy("map_prices") %>%
+      clearMarkers() %>%
+      addCircleMarkers(
+        data    = df_c,
+        lng     = ~lng, lat = ~lat,
+        radius  = ~scales::rescale(avg_price, to = c(6, 16)),
+        label   = ~paste0(
+          country, ": ",
+          if (identical(input$currency_basis, "USD (FX, nominal)") && fx_available)
+            scales::dollar(round(avg_price, 0))
+          else
+            pretty_si(round(avg_price, 0))
+        ),
+        layerId = ~country,
+        stroke  = FALSE, fillOpacity = 0.7
+      ) %>%
+      setView(lng = 10, lat = 20, zoom = 2)
+  })
 })

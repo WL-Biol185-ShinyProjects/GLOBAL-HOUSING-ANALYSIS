@@ -13,10 +13,7 @@ shinyServer(function(input, output, session) {
         "border-radius: 8px; display: flex; align-items: center;",
         "justify-content: center; background-color: #fcfcfc;"
       ),
-      tags$span(
-        style = "color:#888;",
-        "Image placeholder — add visualization or header image here"
-      )
+      tags$span(style = "color:#888;", "Image placeholder — add visualization or header image here")
     )
   })
   
@@ -28,51 +25,30 @@ shinyServer(function(input, output, session) {
     )
   })
   
-  # Value boxes
   output$vb_min_year <- renderValueBox({
-    valueBox(
-      subtitle = "Earliest Build Year",
-      value = dataset_stats$min_constructed_year,
-      icon = icon("calendar"),
-      color = "teal"
-    )
+    valueBox(subtitle = "Earliest Build Year", value = dataset_stats$min_constructed_year,
+             icon = icon("calendar"), color = "teal")
   })
-  
   output$vb_countries <- renderValueBox({
-    valueBox(
-      subtitle = "Countries",
-      value = dataset_stats$n_countries,
-      icon = icon("globe"),
-      color = "aqua"
-    )
+    valueBox(subtitle = "Countries", value = dataset_stats$n_countries,
+             icon = icon("globe"), color = "aqua")
   })
-  
   output$vb_cities <- renderValueBox({
-    valueBox(
-      subtitle = "Cities",
-      value = dataset_stats$n_cities,
-      icon = icon("city"),
-      color = "blue"
-    )
+    valueBox(subtitle = "Cities", value = dataset_stats$n_cities,
+             icon = icon("city"), color = "blue")
   })
-  
   output$vb_rows <- renderValueBox({
-    valueBox(
-      subtitle = "Datapoints",
-      value = format(dataset_stats$n_rows, big.mark = ","),
-      icon = icon("database"),
-      color = "purple"
-    )
+    valueBox(subtitle = "Datapoints", value = format(dataset_stats$n_rows, big.mark = ","),
+             icon = icon("database"), color = "purple")
   })
   
   # ====================================================================
-  # CURRENCY NORMALIZATION LAYER (for Market Insights + Map)
+  # CURRENCY NORMALIZATION
   # ====================================================================
-  
   base_df <- reactive({
     house %>%
       dplyr::left_join(currency_map, by = "country") %>%
-      dplyr::left_join(fx_rates, by = "currency") %>%
+      dplyr::left_join(fx_rates,     by = "currency") %>%
       dplyr::mutate(rate_to_usd = dplyr::coalesce(rate_to_usd, 1))
   })
   
@@ -96,150 +72,323 @@ shinyServer(function(input, output, session) {
   })
   
   # --------------------------------------------------------------------
-  # Robust formatters (no crashes on NA/NaN/Inf)
+  # Compact currency formatting helpers
   # --------------------------------------------------------------------
-  pretty_si <- function(x, accuracy = 0.1) {
+  compact_num <- function(x) {
     x[!is.finite(x)] <- NA_real_
-    out <- ifelse(
-      is.na(x), NA_character_,
-      ifelse(
-        abs(x) >= 1e9, paste0(scales::number(x / 1e9, accuracy = accuracy), "B"),
-        ifelse(
-          abs(x) >= 1e6, paste0(scales::number(x / 1e6, accuracy = accuracy), "M"),
-          ifelse(
-            abs(x) >= 1e3, paste0(scales::number(x / 1e3, accuracy = accuracy), "k"),
-            scales::number(x, accuracy = accuracy)
-          )
-        )
-      )
-    )
+    out <- rep(NA_character_, length(x))
+    idx <- !is.na(x); if (!any(idx)) return(out)
+    
+    y <- x[idx]; abs_y <- abs(y)
+    unit <- character(length(y)); val <- numeric(length(y))
+    
+    m_m <- abs_y >= 1e6; unit[m_m] <- "M"; val[m_m] <- y[m_m] / 1e6
+    m_k <- abs_y >= 1e3 & !m_m; unit[m_k] <- "K"; val[m_k] <- y[m_k] / 1e3
+    m_p <- !m_m & !m_k; unit[m_p] <- "";  val[m_p] <- y[m_p]
+    
+    lab <- paste0(scales::number(val, accuracy = 0.1), unit)
+    out[idx] <- lab
     out
   }
   
-  fmt_money <- function(x) {
+  compact_num_prec <- function(x, digits = 3) {
+    x[!is.finite(x)] <- NA_real_
+    out <- rep(NA_character_, length(x))
+    idx <- !is.na(x); if (!any(idx)) return(out)
+    
+    y <- x[idx]; abs_y <- abs(y)
+    unit <- character(length(y)); val <- numeric(length(y))
+    
+    m_m <- abs_y >= 1e6; unit[m_m] <- "M"; val[m_m] <- y[m_m] / 1e6
+    m_k <- abs_y >= 1e3 & !m_m; unit[m_k] <- "K"; val[m_k] <- y[m_k] / 1e3
+    m_p <- !m_m & !m_k; unit[m_p] <- "";  val[m_p] <- y[m_p]
+    
+    acc <- 10^(-digits)
+    lab <- paste0(scales::number(val, accuracy = acc), unit)
+    out[idx] <- lab
+    out
+  }
+  
+  local_symbol <- reactive({
+    sel <- input$flt_country
+    if (is.null(sel) || sel == "All") {
+      "$"
+    } else {
+      sym <- currency_map %>% dplyr::filter(country == sel) %>% dplyr::pull(currency_symbol)
+      if (length(sym) == 1) sym else "$"
+    }
+  })
+  
+  fmt_compact_money <- function(x) {
     if (isTruthy(input$currency_basis) &&
         identical(input$currency_basis, "USD (FX, nominal)") &&
         fx_available) {
-      scales::dollar(x)   # handles NA
+      paste0("$", compact_num(x))
     } else {
-      pretty_si(x)
+      paste0(local_symbol(), compact_num(x))
+    }
+  }
+  
+  fmt_compact_money_prec <- function(x, digits = 3) {
+    if (isTruthy(input$currency_basis) &&
+        identical(input$currency_basis, "USD (FX, nominal)") &&
+        fx_available) {
+      paste0("$", compact_num_prec(x, digits = digits))
+    } else {
+      paste0(local_symbol(), compact_num_prec(x, digits = digits))
     }
   }
   
   # ====================================================================
-  # (a) AVERAGE PRICES TABLES (country / city / property type)
+  # SHARED FILTERS (Country + Property type)
   # ====================================================================
-  output$tbl_avg_country <- renderTable({
-    df_price() %>%
-      dplyr::group_by(country) %>%
-      dplyr::summarise(avg_price = mean(price_display, na.rm = TRUE), .groups = "drop") %>%
-      dplyr::mutate(avg_price = dplyr::if_else(is.nan(avg_price), NA_real_, avg_price)) %>%
-      dplyr::filter(is.finite(avg_price) | is.na(avg_price)) %>%
-      dplyr::arrange(dplyr::desc(avg_price)) %>%
-      dplyr::mutate(`Average price` = fmt_money(avg_price)) %>%
-      dplyr::select(country, `Average price`)
-  }, striped = TRUE, spacing = "s")
+  df_filtered <- reactive({
+    df <- df_price()
+    if (!is.null(input$flt_country) && input$flt_country != "All") {
+      df <- df %>% dplyr::filter(country == input$flt_country)
+    }
+    if (!is.null(input$flt_property) && input$flt_property != "All") {
+      df <- df %>% dplyr::filter(property_type == input$flt_property)
+    }
+    df
+  })
   
-  output$tbl_avg_city <- renderTable({
-    df_price() %>%
-      dplyr::group_by(country, city) %>%
-      dplyr::summarise(avg_price = mean(price_display, na.rm = TRUE), .groups = "drop") %>%
-      dplyr::mutate(avg_price = dplyr::if_else(is.nan(avg_price), NA_real_, avg_price)) %>%
-      dplyr::filter(is.finite(avg_price) | is.na(avg_price)) %>%
-      dplyr::arrange(country, dplyr::desc(avg_price)) %>%
-      dplyr::mutate(`Average price` = fmt_money(avg_price)) %>%
-      dplyr::select(country, city, `Average price`)
-  }, striped = TRUE, spacing = "s")
-  
-  output$tbl_avg_property <- renderTable({
-    df_price() %>%
-      dplyr::group_by(property_type) %>%
-      dplyr::summarise(avg_price = mean(price_display, na.rm = TRUE), .groups = "drop") %>%
-      dplyr::mutate(avg_price = dplyr::if_else(is.nan(avg_price), NA_real_, avg_price)) %>%
-      dplyr::filter(is.finite(avg_price) | is.na(avg_price)) %>%
-      dplyr::arrange(dplyr::desc(avg_price)) %>%
-      dplyr::mutate(`Average price` = fmt_money(avg_price)) %>%
-      dplyr::select(property_type, `Average price`)
-  }, striped = TRUE, spacing = "s")
+  # Utility for Plotly y-axis labels with compact money (choose precision)
+  make_yaxis_compact <- function(yvals, digits = 1) {
+    rng   <- range(yvals, na.rm = TRUE)
+    ticks <- pretty(rng, n = 6)
+    list(
+      tickmode = "array",
+      tickvals = ticks,
+      ticktext = fmt_compact_money_prec(ticks, digits = digits)
+    )
+  }
   
   # ====================================================================
-  # (b) SIZE vs PRICE CURVE (binned sqft)
+  # SIZE vs PRICE (Plotly) — hover + click-to-lock bin
   # ====================================================================
-  output$plot_size_price <- renderPlot({
-    df_price() %>%
-      dplyr::mutate(
-        size_bin = cut(
-          property_size_sqft,
-          breaks = quantile(property_size_sqft, probs = seq(0, 1, 0.05), na.rm = TRUE),
-          include.lowest = TRUE, dig.lab = 8
+  bin_clicked <- reactiveVal(NULL)
+  
+  output$plot_size_price <- renderPlotly({
+    df <- df_filtered(); req(nrow(df) > 0)
+    
+    qs <- stats::quantile(df$property_size_sqft, probs = seq(0, 1, 0.05), na.rm = TRUE)
+    qs <- unique(qs[is.finite(qs)])
+    if (length(qs) < 2) {
+      p <- plotly::plot_ly() %>% layout(
+        annotations = list(
+          x = 0.5, y = 0.5, text = "Not enough data to bin by size.",
+          showarrow = FALSE, xref = "paper", yref = "paper"
         )
-      ) %>%
+      )
+      return(plotly::event_register(p, 'plotly_click'))
+    }
+    
+    binned <- df %>%
+      dplyr::mutate(size_bin = cut(property_size_sqft, breaks = qs, include.lowest = TRUE, dig.lab = 8)) %>%
       dplyr::group_by(size_bin) %>%
       dplyr::summarise(
         avg_price = mean(price_display, na.rm = TRUE),
         avg_sqft  = mean(property_size_sqft, na.rm = TRUE),
-        n = dplyr::n(), .groups = "drop"
-      ) %>%
-      dplyr::mutate(
-        avg_price = dplyr::if_else(is.nan(avg_price), NA_real_, avg_price),
-        avg_sqft  = dplyr::if_else(is.nan(avg_sqft),  NA_real_, avg_sqft)
+        n         = dplyr::n(), .groups = "drop"
       ) %>%
       dplyr::filter(is.finite(avg_price), is.finite(avg_sqft)) %>%
-      ggplot2::ggplot(ggplot2::aes(x = avg_sqft, y = avg_price, group = 1)) +
-      ggplot2::geom_line(linewidth = 1) +
-      ggplot2::geom_point(alpha = 0.6) +
-      ggplot2::labs(x = "Average sqft (bin center)", y = NULL, title = "Property size vs. price (binned)") +
-      ggplot2::scale_y_continuous(labels = fmt_money) +
-      ggplot2::theme_minimal()
+      dplyr::arrange(avg_sqft) %>%
+      dplyr::mutate(
+        bin_id = as.character(size_bin),
+        hover  = paste0(
+          "Bin: ", bin_id,
+          "<br>Avg sqft: ", round(avg_sqft, 0),
+          "<br>Avg price: ", fmt_compact_money(avg_price),
+          "<br>Obs: ", n
+        )
+      )
+    
+    p <- plotly::plot_ly(
+      data = binned, source = "sp",
+      x = ~avg_sqft, y = ~avg_price, text = ~hover, key = ~bin_id,
+      type = "scatter", mode = "lines+markers", hoverinfo = "text"
+    ) %>%
+      layout(
+        xaxis = list(title = "Average sqft (bin center)"),
+        yaxis = c(list(title = ""), make_yaxis_compact(binned$avg_price, digits = 1)),
+        hovermode = "closest"
+      )
+    
+    plotly::event_register(p, 'plotly_click')
   })
   
-  # ====================================================================
-  # (c) AMENITIES IN HIGH-VALUE HOMES (top quartile by chosen currency)
-  # ====================================================================
-  output$plot_amenities_hv <- renderPlot({
-    df <- df_price()
-    q3 <- stats::quantile(df$price_display, 0.75, na.rm = TRUE)
-    df %>%
-      dplyr::mutate(is_high_value = price_display >= q3) %>%
-      dplyr::filter(is_high_value) %>%
+  observeEvent(plotly::event_data("plotly_click", source = "sp"), {
+    ed <- plotly::event_data("plotly_click", source = "sp")
+    if (!is.null(ed) && !is.null(ed$key) && length(ed$key) >= 1) {
+      bin_clicked(ed$key[[1]])
+    }
+  }, ignoreInit = TRUE)
+  
+  output$bin_summary <- renderUI({
+    df <- df_filtered(); req(nrow(df) > 0)
+    
+    qs <- stats::quantile(df$property_size_sqft, probs = seq(0, 1, 0.05), na.rm = TRUE)
+    qs <- unique(qs[is.finite(qs)])
+    if (length(qs) < 2) return(tags$p("Not enough data to bin by size."))
+    
+    binned <- df %>%
+      dplyr::mutate(size_bin = cut(property_size_sqft, breaks = qs, include.lowest = TRUE, dig.lab = 8)) %>%
+      dplyr::group_by(size_bin) %>%
       dplyr::summarise(
-        garage_share = mean(garage == 1, na.rm = TRUE),
-        garden_share = mean(garden == 1, na.rm = TRUE)
+        avg_price = mean(price_display, na.rm = TRUE),
+        avg_sqft  = mean(property_size_sqft, na.rm = TRUE),
+        n         = dplyr::n(), .groups = "drop"
       ) %>%
-      tidyr::pivot_longer(dplyr::everything(), names_to = "amenity", values_to = "share") %>%
-      dplyr::mutate(amenity = dplyr::recode(amenity, garage_share = "Garage", garden_share = "Garden")) %>%
-      ggplot2::ggplot(ggplot2::aes(x = amenity, y = share)) +
-      ggplot2::geom_col() +
-      ggplot2::scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
-      ggplot2::labs(x = NULL, y = "Share of high-value homes", title = "Amenities in top-quartile priced homes") +
-      ggplot2::theme_minimal()
+      dplyr::filter(is.finite(avg_price), is.finite(avg_sqft)) %>%
+      dplyr::arrange(avg_sqft) %>%
+      dplyr::mutate(bin_id = as.character(size_bin))
+    
+    sel <- bin_clicked()
+    if (is.null(sel) || !(sel %in% binned$bin_id)) {
+      return(tags$p("Click a point on the chart to see its summary here."))
+    }
+    
+    row <- binned %>% dplyr::filter(bin_id == sel) %>% dplyr::slice(1)
+    tags$div(
+      tags$p(tags$b("Selected bin: "), sel),
+      tags$p(tags$b("Avg sqft: "), round(row$avg_sqft, 0)),
+      tags$p(tags$b("Avg price: "), fmt_compact_money(row$avg_price)),
+      tags$p(tags$b("Observations: "), row$n)
+    )
   })
   
   # ====================================================================
-  # (d) AGE OF HOUSE IMPACT (constructed_year vs avg price)
+  # AMENITIES PIE + FURNISHING PIE (Plotly) by filtered quartile
   # ====================================================================
-  output$plot_age_impact <- renderPlot({
-    df_price() %>%
+  quartile_filter <- reactive({
+    df <- df_filtered()
+    qs <- stats::quantile(df$price_display, probs = c(.25, .5, .75), na.rm = TRUE)
+    switch(input$amen_quartile,
+           Q1 = df$price_display <= qs[1],
+           Q2 = df$price_display > qs[1] & df$price_display <= qs[2],
+           Q3 = df$price_display > qs[2] & df$price_display <= qs[3],
+           Q4 = df$price_display > qs[3]
+    )
+  })
+  
+  output$pie_amenities <- renderPlotly({
+    df <- df_filtered(); req(nrow(df) > 0)
+    
+    idx <- quartile_filter(); if (is.null(idx)) return(plotly::plot_ly())
+    
+    dfx <- df %>%
+      dplyr::filter(idx) %>%
+      dplyr::summarise(
+        Garage  = mean(garage == 1, na.rm = TRUE),
+        Garden  = mean(garden == 1, na.rm = TRUE)
+      ) %>%
+      tidyr::pivot_longer(dplyr::everything(), names_to = "Amenity", values_to = "Share") %>%
+      dplyr::mutate(Share = ifelse(is.finite(Share), Share, NA_real_)) %>%
+      dplyr::filter(!is.na(Share))
+    
+    if (nrow(dfx) == 0) {
+      return(plotly::plot_ly() %>% layout(
+        annotations = list(x = 0.5, y = 0.5, text = "No data for selected filters/quartile",
+                           showarrow = FALSE, xref = "paper", yref = "paper")
+      ))
+    }
+    
+    plotly::plot_ly(
+      data = dfx,
+      labels = ~Amenity, values = ~Share,
+      type = "pie",
+      textinfo = "label+percent",
+      hovertemplate = "%{label}: %{percent:.1%}<extra></extra>"
+    )
+  })
+  
+  output$pie_furnish <- renderPlotly({
+    df <- df_filtered(); req(nrow(df) > 0)
+    
+    idx <- quartile_filter(); if (is.null(idx)) return(plotly::plot_ly())
+    
+    dfx <- df %>%
+      dplyr::filter(idx) %>%
+      dplyr::count(furnishing_status, name = "n") %>%
+      dplyr::mutate(
+        Share = n / sum(n),
+        Label = ifelse(is.na(furnishing_status), "Unknown", furnishing_status)
+      ) %>%
+      dplyr::filter(!is.na(Share))
+    
+    if (nrow(dfx) == 0) {
+      return(plotly::plot_ly() %>% layout(
+        annotations = list(x = 0.5, y = 0.5, text = "No data for selected filters/quartile",
+                           showarrow = FALSE, xref = "paper", yref = "paper")
+      ))
+    }
+    
+    plotly::plot_ly(
+      data = dfx,
+      labels = ~Label, values = ~Share,
+      type = "pie",
+      textinfo = "label+percent",
+      hovertemplate = "%{label}: %{percent:.1%}<extra></extra>"
+    )
+  })
+  
+  # ====================================================================
+  # AGE OF HOUSE IMPACT (Plotly) — drag-select to ZOOM + Reset (3-decimals)
+  # ====================================================================
+  selected_age_range <- reactiveVal(NULL)
+  
+  output$plot_age_impact <- renderPlotly({
+    df <- df_filtered(); req(nrow(df) > 0)
+    
+    agg <- df %>%
       dplyr::group_by(constructed_year) %>%
       dplyr::summarise(avg_price = mean(price_display, na.rm = TRUE), .groups = "drop") %>%
-      dplyr::mutate(avg_price = dplyr::if_else(is.nan(avg_price), NA_real_, avg_price)) %>%
-      dplyr::filter(is.finite(avg_price), is.finite(constructed_year)) %>%
-      dplyr::arrange(constructed_year) %>%
-      ggplot2::ggplot(ggplot2::aes(x = constructed_year, y = avg_price)) +
-      ggplot2::geom_line(linewidth = 1) +
-      ggplot2::labs(x = "Constructed year", y = NULL, title = "Home age (constructed year) vs. average price") +
-      ggplot2::scale_y_continuous(labels = fmt_money) +
-      ggplot2::theme_minimal()
+      dplyr::filter(is.finite(constructed_year), is.finite(avg_price)) %>%
+      dplyr::arrange(constructed_year)
+    
+    sel <- selected_age_range()  # NULL or c(x0, x1)
+    
+    p <- plotly::plot_ly(
+      data = agg, source = "age",
+      x = ~constructed_year, y = ~avg_price,
+      type = "scatter", mode = "lines+markers", hoverinfo = "text",
+      text = ~paste0(
+        "Year: ", constructed_year,
+        "<br>Avg price: ", fmt_compact_money_prec(avg_price, digits = 3)
+      )
+    ) %>%
+      layout(
+        dragmode = "select",
+        xaxis = c(list(title = "Constructed year"),
+                  if (!is.null(sel) && all(is.finite(sel))) list(range = sel) else NULL),
+        yaxis = c(list(title = ""),
+                  make_yaxis_compact(agg$avg_price, digits = 3))
+      )
+    
+    plotly::event_register(p, 'plotly_selected')
+  })
+  
+  observeEvent(plotly::event_data("plotly_selected", source = "age"), {
+    ed <- plotly::event_data("plotly_selected", source = "age")
+    if (is.null(ed) || !isTRUE(NROW(ed) > 0) || all(is.na(ed[["x"]]))) {
+      selected_age_range(NULL); return()
+    }
+    xr <- range(ed[["x"]], na.rm = TRUE)
+    if (all(is.finite(xr))) selected_age_range(xr)
+  }, ignoreInit = TRUE)
+  
+  observeEvent(input$btn_reset_age, {
+    selected_age_range(NULL)
   })
   
   # ====================================================================
-  # (e) INTERACTIVE MAP (country view -> click -> city view)
+  # INTERACTIVE MAP (country view -> click -> city view) + legend
   # ====================================================================
   output$map_prices <- renderLeaflet({
     df_c <- df_price() %>%
       dplyr::group_by(country) %>%
       dplyr::summarise(avg_price = mean(price_display, na.rm = TRUE), .groups = "drop") %>%
-      dplyr::mutate(avg_price = dplyr::if_else(is.nan(avg_price), NA_real_, avg_price)) %>%
       dplyr::filter(is.finite(avg_price)) %>%
       dplyr::inner_join(country_coords, by = "country")
     
@@ -250,16 +399,21 @@ shinyServer(function(input, output, session) {
         data    = df_c,
         lng     = ~lng, lat = ~lat,
         radius  = ~scales::rescale(avg_price, to = c(6, 16)),
-        label   = ~paste0(
-          country, ": ",
-          if (identical(input$currency_basis, "USD (FX, nominal)") && fx_available)
-            scales::dollar(round(avg_price, 0))
-          else
-            pretty_si(round(avg_price, 0))
-        ),
+        label   = ~paste0(country, ": ", fmt_compact_money(round(avg_price, 0))),
         layerId = ~country,
         stroke  = FALSE, fillOpacity = 0.7
-      )
+      ) %>%
+      addControl(html = HTML(
+        '<div style="background:white;padding:8px;border-radius:6px;box-shadow:0 1px 3px rgba(0,0,0,0.2);">
+           <b>Bubble size: avg price</b><br/>
+           <svg width="160" height="38">
+             <circle cx="25" cy="20" r="6"  fill="#3388ff" fill-opacity="0.7"></circle>
+             <text x="45" y="24" font-size="12">lower</text>
+             <circle cx="110" cy="20" r="16" fill="#3388ff" fill-opacity="0.7"></circle>
+             <text x="135" y="24" font-size="12">higher</text>
+           </svg>
+         </div>'
+      ), position = "bottomleft")
   })
   
   observeEvent(input$map_prices_marker_click, {
@@ -269,7 +423,6 @@ shinyServer(function(input, output, session) {
     df_city <- df_price() %>%
       dplyr::group_by(country, city) %>%
       dplyr::summarise(avg_price = mean(price_display, na.rm = TRUE), .groups = "drop") %>%
-      dplyr::mutate(avg_price = dplyr::if_else(is.nan(avg_price), NA_real_, avg_price)) %>%
       dplyr::filter(country == click$id, is.finite(avg_price)) %>%
       dplyr::inner_join(city_coords, by = c("country", "city"))
     
@@ -281,25 +434,18 @@ shinyServer(function(input, output, session) {
         data    = df_city,
         lng     = ~lng, lat = ~lat,
         radius  = ~scales::rescale(avg_price, to = c(5, 14)),
-        label   = ~paste0(
-          city, ": ",
-          if (identical(input$currency_basis, "USD (FX, nominal)") && fx_available)
-            scales::dollar(round(avg_price, 0))
-          else
-            pretty_si(round(avg_price, 0))
-        ),
+        label   = ~paste0(city, ": ", fmt_compact_money(round(avg_price, 0))),
+        popup   = ~paste0("<b>", city, "</b><br/>Avg price: ", fmt_compact_money(round(avg_price, 0))),
         stroke  = FALSE, fillOpacity = 0.75
       ) %>%
       fitBounds(lng1 = min(df_city$lng), lat1 = min(df_city$lat),
                 lng2 = max(df_city$lng), lat2 = max(df_city$lat))
   })
   
-  # Reset overlay button (in UI) -> back to global country view
   observeEvent(input$btn_reset_map, {
     df_c <- df_price() %>%
       dplyr::group_by(country) %>%
       dplyr::summarise(avg_price = mean(price_display, na.rm = TRUE), .groups = "drop") %>%
-      dplyr::mutate(avg_price = dplyr::if_else(is.nan(avg_price), NA_real_, avg_price)) %>%
       dplyr::filter(is.finite(avg_price)) %>%
       dplyr::inner_join(country_coords, by = "country")
     
@@ -309,13 +455,7 @@ shinyServer(function(input, output, session) {
         data    = df_c,
         lng     = ~lng, lat = ~lat,
         radius  = ~scales::rescale(avg_price, to = c(6, 16)),
-        label   = ~paste0(
-          country, ": ",
-          if (identical(input$currency_basis, "USD (FX, nominal)") && fx_available)
-            scales::dollar(round(avg_price, 0))
-          else
-            pretty_si(round(avg_price, 0))
-        ),
+        label   = ~paste0(country, ": ", fmt_compact_money(round(avg_price, 0))),
         layerId = ~country,
         stroke  = FALSE, fillOpacity = 0.7
       ) %>%

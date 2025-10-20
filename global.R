@@ -6,6 +6,8 @@ library(shiny)
 library(tidyverse)
 library(leaflet)
 library(shinydashboard)
+library(ggpubr)     # (kept; not strictly required after switching pies to Plotly)
+library(plotly)
 
 # ---------------------------------------------------------------------
 # Read once, share everywhere
@@ -24,9 +26,6 @@ cat_cols <- house %>%
   dplyr::select(where(function(x) is.character(x) || is.factor(x))) %>%
   names()
 
-# A tiny, safe sample preview (kept for possible future use)
-house_head <- head(house, 10)
-
 # ---------------------------------------------------------------------
 # Dataset stats for the Overview tab (computed once)
 # ---------------------------------------------------------------------
@@ -39,26 +38,27 @@ dataset_stats <- list(
 
 # ---------------------------------------------------------------------
 # Currency mapping (by country) and optional FX table
+#   - currency_symbol used for compact local formatting
 # ---------------------------------------------------------------------
 currency_map <- tibble::tribble(
-  ~country,        ~currency,
-  "France",        "EUR",
-  "Germany",       "EUR",
-  "Canada",        "CAD",
-  "Brazil",        "BRL",
-  "UAE",           "AED",
-  "Australia",     "AUD",
-  "UK",            "GBP",
-  "USA",           "USD",
-  "China",         "CNY",
-  "Singapore",     "SGD",
-  "India",         "INR",
-  "Japan",         "JPY",
-  "South Africa",  "ZAR"
+  ~country,        ~currency, ~currency_symbol,
+  "France",        "EUR",     "€",
+  "Germany",       "EUR",     "€",
+  "Canada",        "CAD",     "C$",
+  "Brazil",        "BRL",     "R$",
+  "UAE",           "AED",     "AED",
+  "Australia",     "AUD",     "A$",
+  "UK",            "GBP",     "£",
+  "USA",           "USD",     "$",
+  "China",         "CNY",     "¥",
+  "Singapore",     "SGD",     "S$",
+  "India",         "INR",     "₹",
+  "Japan",         "JPY",     "¥",
+  "South Africa",  "ZAR",     "R"
 )
 
-# Optional: static FX table you maintain in the app folder
-# Expected columns: currency, rate_to_usd  (e.g., EUR, 1.08)
+# Optional: static FX table in app folder
+# Expect columns: currency, rate_to_usd  (e.g., EUR, 1.08)
 fx_rates_path <- "fx_rates_static.csv"
 fx_rates <- if (file.exists(fx_rates_path)) {
   readr::read_csv(fx_rates_path, show_col_types = FALSE) %>%
@@ -90,7 +90,6 @@ country_coords <- tibble::tribble(
   "Japan",         36.2048, 138.2529
 )
 
-# City centroids (representative set for the dataset’s cities)
 city_coords <- tibble::tribble(
   ~city,            ~country,        ~lat,      ~lng,
   "Paris",          "France",         48.8566,    2.3522,

@@ -116,7 +116,7 @@ dashboardPage(
         # c) Age impact (Plotly with box-select to ZOOM + reset)
         fluidRow(
           box(
-            title = "Age of House Impact on Value (drag to zoom a year range)",
+            title = "Age of House Impact on Value (drag to zoom a year range, click Autoscale to reset axes)",
             width = 12, status = "success", solidHeader = TRUE,
             # ↓ Add the reset button just above the plot
             actionButton("btn_reset_age", "Reset view",

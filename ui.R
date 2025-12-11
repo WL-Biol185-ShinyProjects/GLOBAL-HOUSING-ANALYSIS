@@ -183,7 +183,7 @@ ui <- dashboardPage(
                 style = "
                   background-image: url('Old_World_estate_in_Southlake.jpg');
                   background-size: cover;
-                  background-position: center top;
+                  background-position: center center;
                   height: 400px;
                   position: relative;
                 "

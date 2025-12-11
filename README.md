@@ -1,6 +1,8 @@
-# USA-HOUSING-ANALYSIS
-We are looking to use Redfin's monthly data to compare how housing market conditions evolve over time across several major U.S. metros and the national market, focusing on price trends, market tightness, and liquidity.
+# USA-METRO-HOUSING-ANALYSIS (Redfin Housing Market Explorer)
 
-I edited this
+An interactive R Shiny dashboard for exploring U.S. housing market trends across major metropolitan areas. Built using Redfin's publicly available monthly housing data, it enables users to compare regional price trends, identify buyer/seller market regimes, visualize market heat through a composite index, and explore context-based pricing ranges anchored to regional medians.
 
-References, acknowledgments to claude, gpt, citations, etc.
+## Acknowledgments
+
+- **Data**: [Redfin Data Center](https://www.redfin.com/news/data-center/)
+- **AI Assistance**: Developed with assistance from [Claude](https://www.anthropic.com/claude) (Anthropic) and [ChatGPT](https://openai.com/chatgpt) (OpenAI)

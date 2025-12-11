@@ -816,6 +816,9 @@ ui <- dashboardPage(
               column(width = 3, uiOutput("re_card_volume"))
             ),
             
+            # Spacer
+            tags$div(style = "height: 20px;"),
+            
             # Main metric chart (interactive)
             box(
               title       = uiOutput("re_main_chart_title"),
@@ -1132,8 +1135,7 @@ ui <- dashboardPage(
                 max        = latest_month,
                 value      = latest_month,
                 timeFormat = "%b %Y",
-                width      = "100%",
-                animate    = animationOptions(interval = 500, loop = FALSE)
+                width      = "100%"
               ),
               
               tags$hr(style = "margin: 15px 0;"),
@@ -1393,6 +1395,9 @@ ui <- dashboardPage(
               column(width = 3, uiOutput("pg_indicator_stl")),
               column(width = 3, uiOutput("pg_indicator_inventory"))
             ),
+            
+            # Spacer
+            tags$div(style = "height: 20px;"),
             
             # Context chart
             box(

@@ -1201,15 +1201,21 @@ server <- function(input, output, session) {
       coord_flip() +
       scale_fill_manual(
         values = c("Seller" = "#E74C3C", "Neutral" = "#F39C12", "Buyer" = "#3498DB"),
-        name   = "Regime"
+        name   = NULL
       ) +
       scale_y_continuous(labels = function(x) paste0(x, "%"), expand = c(0, 0)) +
-      labs(x = NULL, y = "Percentage of Months") +
-      theme_app() +
+      labs(x = NULL, y = "% of Months") +
+      theme_app(base_size = 12) +
       theme(
         legend.position = "bottom",
-        panel.grid.major.y = element_blank()
-      )
+        legend.direction = "horizontal",
+        legend.box.margin = margin(t = -5),
+        legend.key.size = unit(0.8, "lines"),
+        panel.grid.major.y = element_blank(),
+        axis.text.y = element_text(size = 9),
+        axis.title.x = element_text(size = 10)
+      ) +
+      guides(fill = guide_legend(nrow = 1))
   }, res = 96)
   
   # Heat index trend over time
@@ -1217,14 +1223,32 @@ server <- function(input, output, session) {
     req(nrow(mh_data()) > 0)
     
     ggplot(mh_data(), aes(x = month_end, y = heat_index, color = region)) +
+      # Add background bands for context
+      annotate("rect", xmin = -Inf, xmax = Inf, ymin = 0, ymax = 33, 
+               fill = "#3498DB", alpha = 0.1) +
+      annotate("rect", xmin = -Inf, xmax = Inf, ymin = 33, ymax = 67, 
+               fill = "#F39C12", alpha = 0.1) +
+      annotate("rect", xmin = -Inf, xmax = Inf, ymin = 67, ymax = 100, 
+               fill = "#E74C3C", alpha = 0.1) +
+      # Reference lines
+      geom_hline(yintercept = 33, linetype = "dotted", color = "#95A5A6", linewidth = 0.5) +
+      geom_hline(yintercept = 67, linetype = "dotted", color = "#95A5A6", linewidth = 0.5) +
+      # Data lines
       geom_line(linewidth = 1) +
-      geom_hline(yintercept = 50, linetype = "dashed", color = "#95A5A6", linewidth = 0.5) +
       scale_color_manual(values = region_colors) +
-      scale_y_continuous(limits = c(0, 100), expand = c(0.02, 0)) +
+      scale_y_continuous(
+        limits = c(0, 100), 
+        expand = c(0, 0),
+        breaks = c(0, 33, 50, 67, 100),
+        labels = c("0\n(Cool)", "33", "50", "67", "100\n(Hot)")
+      ) +
       scale_x_date(date_labels = "%Y") +
       labs(x = NULL, y = "Heat Index") +
-      theme_app() +
-      theme(legend.position = "none")
+      theme_app(base_size = 12) +
+      theme(
+        legend.position = "none",
+        axis.text.y = element_text(size = 9)
+      )
   }, res = 96)
   
   # Market heat summary
@@ -1349,8 +1373,8 @@ server <- function(input, output, session) {
     req(length(input$ss_regions) > 0)
     req(input$ss_month)
     
-    # Find the closest available month to selected
-    selected_month <- as.Date(input$ss_month)
+    # Round to the first of the selected month to ensure consistent matching
+    selected_month <- floor_date(as.Date(input$ss_month), "month")
     
     redfin %>%
       filter(region %in% input$ss_regions) %>%
@@ -1878,73 +1902,127 @@ server <- function(input, output, session) {
     current <- pg_month_data()
     mc <- pg_market_class()
     
-    # Get last 24 months of data
+    # Get 12 months before and 12 months after the selected month
     recent_data <- region_data %>%
-      filter(month_end >= (current$month_end - months(24)))
+      filter(
+        month_end >= (current$month_end - months(12)),
+        month_end <= (current$month_end + months(12))
+      ) %>%
+      mutate(is_current = month_end == current$month_end)
     
-    # Create tooltip
-    recent_data <- recent_data %>%
-      mutate(
-        tooltip_text = paste0(
-          "<b>", format(month_end, "%B %Y"), "</b><br>",
-          "<b>Median Price:</b> ", scales::dollar(median_sale_price), "<br>",
-          "<b>YoY Change:</b> ", round(median_sale_price_yoy, 1), "%"
-        )
-      )
+    # Separate data for current point
+    current_point <- recent_data %>% filter(is_current)
+    other_points <- recent_data %>% filter(!is_current)
     
-    p <- ggplot(recent_data, aes(x = month_end, y = median_sale_price)) +
-      # Suggested range band for current month
-      annotate(
-        "rect",
-        xmin  = current$month_end - days(15),
-        xmax  = current$month_end + days(15),
-        ymin  = mc$lower_bound,
-        ymax  = mc$upper_bound,
-        fill  = mc$color,
-        alpha = 0.3
-      ) +
-      # Price line
-      geom_line(aes(text = tooltip_text), color = app_colors$primary, linewidth = 1.2) +
-      # Current month point
-      geom_point(
-        data = current,
-        aes(x = month_end, y = median_sale_price),
-        color = mc$color,
-        size = 4
-      ) +
-      # Median reference line
-      geom_hline(
-        yintercept = mc$median_price,
-        linetype   = "dashed",
-        color      = "#95A5A6",
-        linewidth  = 0.5
-      ) +
-      scale_y_continuous(
-        labels = scales::label_dollar(scale = 1e-3, suffix = "k"),
-        limits = c(0, NA),
-        expand = expansion(mult = c(0, 0.1))
-      ) +
-      scale_x_date(date_labels = "%b '%y", date_breaks = "3 months") +
-      labs(x = NULL, y = "Median Sale Price") +
-      theme_app() +
-      theme(axis.text.x = element_text(angle = 45, hjust = 1))
+    # Build tooltips
+    other_tooltips <- paste0(
+      format(other_points$month_end, "%B %Y"), "\n",
+      "Median Price: ", scales::dollar(other_points$median_sale_price), "\n",
+      "YoY Change: ", round(other_points$median_sale_price_yoy, 1), "%"
+    )
     
-    ggplotly(p, tooltip = "text") %>%
+    current_tooltip <- paste0(
+      format(current_point$month_end, "%B %Y"), " (Selected)\n",
+      "Median Price: ", scales::dollar(current_point$median_sale_price), "\n",
+      "YoY Change: ", round(current_point$median_sale_price_yoy, 1), "%\n\n",
+      "Suggested Range: ", scales::dollar(mc$lower_bound), " - ", scales::dollar(mc$upper_bound), "\n",
+      "Market: ", mc$market_class
+    )
+    
+    range_tooltip <- paste0(
+      "Suggested Listing Range\n",
+      scales::dollar(mc$lower_bound), " - ", scales::dollar(mc$upper_bound), "\n",
+      "(", round(mc$lower_mult * 100), "% - ", round(mc$upper_mult * 100), "% of median)"
+    )
+    
+    # Calculate y-axis limits
+    y_min <- min(mc$lower_bound * 0.95, min(recent_data$median_sale_price, na.rm = TRUE) * 0.95)
+    y_max <- max(mc$upper_bound * 1.05, max(recent_data$median_sale_price, na.rm = TRUE) * 1.05)
+    
+    # Build plot directly in plotly
+    ply <- plot_ly() %>%
+      # Add the range band first (so it's behind everything)
+      add_ribbons(
+        x = recent_data$month_end,
+        ymin = mc$lower_bound,
+        ymax = mc$upper_bound,
+        fillcolor = paste0(mc$color, "33"),
+        line = list(color = "transparent"),
+        hoverinfo = "text",
+        text = range_tooltip,
+        name = "Suggested Range",
+        showlegend = FALSE
+      ) %>%
+      # Add the price line
+      add_lines(
+        x = recent_data$month_end,
+        y = recent_data$median_sale_price,
+        line = list(color = app_colors$primary, width = 3),
+        hoverinfo = "none",
+        name = "Price",
+        showlegend = FALSE
+      ) %>%
+      # Add points for non-current months
+      add_markers(
+        x = other_points$month_end,
+        y = other_points$median_sale_price,
+        marker = list(color = app_colors$primary, size = 8),
+        hoverinfo = "text",
+        text = other_tooltips,
+        name = "Monthly Data",
+        showlegend = FALSE
+      ) %>%
+      # Add the current month point (highlighted)
+      add_markers(
+        x = current_point$month_end,
+        y = current_point$median_sale_price,
+        marker = list(
+          color = mc$color,
+          size = 14,
+          line = list(color = "white", width = 2)
+        ),
+        hoverinfo = "text",
+        text = current_tooltip,
+        name = "Selected Month",
+        showlegend = FALSE
+      ) %>%
+      # Layout
       layout(
-        hoverlabel = list(bgcolor = "white", font = list(size = 12, color = "#2C3E50")),
-        margin     = list(b = 80),
-        annotations = list(
+        xaxis = list(
+          title = "",
+          tickformat = "%b '%y",
+          tickangle = -45,
+          gridcolor = "#E0E0E0"
+        ),
+        yaxis = list(
+          title = "Median Sale Price",
+          tickformat = "$,.0f",
+          range = c(y_min, y_max),
+          gridcolor = "#E0E0E0"
+        ),
+        hoverlabel = list(
+          bgcolor = "white",
+          font = list(size = 12, color = "#2C3E50"),
+          bordercolor = "transparent"
+        ),
+        margin = list(b = 80, t = 20),
+        # Add a horizontal reference line at the median
+        shapes = list(
           list(
-            x         = as.numeric(current$month_end) * 86400000,
-            y         = mc$upper_bound,
-            text      = "Suggested Range",
-            showarrow = FALSE,
-            yshift    = 15,
-            font      = list(size = 10, color = mc$color)
+            type = "line",
+            x0 = min(recent_data$month_end),
+            x1 = max(recent_data$month_end),
+            y0 = mc$median_price,
+            y1 = mc$median_price,
+            line = list(color = "#95A5A6", width = 1, dash = "dash")
           )
-        )
+        ),
+        plot_bgcolor = "white",
+        paper_bgcolor = "white"
       ) %>%
       config(displayModeBar = FALSE)
+    
+    ply
   })
   
   # Interpretation text

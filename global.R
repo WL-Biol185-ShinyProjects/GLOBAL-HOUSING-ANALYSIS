@@ -17,6 +17,9 @@ library(stringr)
 # Color Palette and Theme Configuration
 # =============================================================================
 
+# Add resource path to serve images from app directory
+shiny::addResourcePath("img", ".")
+
 # Primary color palette (professional blue-based scheme)
 app_colors <- list(
   primary      = "#2C3E50",
@@ -201,8 +204,8 @@ redfin <- redfin_raw %>%
 # 3) Parse date, region, and numeric fields
 redfin <- redfin %>%
   mutate(
-    # "Jan-12" -> date
-    month_end = lubridate::my(month_of_period_end),
+    # "Jan-12" -> date (convert to Date, not POSIXct)
+    month_end = as.Date(lubridate::my(month_of_period_end)),
     region    = factor(stringr::str_squish(region)),
     
     # Core level variables
@@ -296,26 +299,70 @@ app_css <- "
   border-radius: 8px;
   box-shadow: 0 2px 8px rgba(0,0,0,0.08);
   border-top: none;
+  overflow: hidden;
 }
 .box.box-primary {
   border-top: 3px solid #3498DB;
 }
+.box.box-primary > .box-header {
+  background-color: #3498DB;
+  color: white;
+  border-radius: 5px 5px 0 0;
+}
 .box.box-success {
   border-top: 3px solid #27AE60;
+}
+.box.box-success > .box-header {
+  background-color: #27AE60;
+  color: white;
+  border-radius: 5px 5px 0 0;
 }
 .box.box-warning {
   border-top: 3px solid #F39C12;
 }
+.box.box-warning > .box-header {
+  background-color: #F39C12;
+  color: white;
+  border-radius: 5px 5px 0 0;
+}
 .box.box-danger {
   border-top: 3px solid #E74C3C;
 }
+.box.box-danger > .box-header {
+  background-color: #E74C3C;
+  color: white;
+  border-radius: 5px 5px 0 0;
+}
+.box.box-info {
+  border-top: 3px solid #00c0ef;
+}
+.box.box-info > .box-header {
+  background-color: #00c0ef;
+  color: white;
+  border-radius: 5px 5px 0 0;
+}
 .box-header {
   padding: 15px 15px 10px 15px;
+  border-radius: 5px 5px 0 0;
 }
 .box-header .box-title {
   font-size: 16px;
   font-weight: 600;
-  color: #2C3E50;
+}
+.box.box-solid > .box-header {
+  border-radius: 5px 5px 0 0;
+}
+.box.box-solid.box-primary > .box-header {
+  background-color: #3498DB;
+  color: white;
+}
+.box.box-solid.box-success > .box-header {
+  background-color: #27AE60;
+  color: white;
+}
+.box.box-solid.box-info > .box-header {
+  background-color: #00c0ef;
+  color: white;
 }
 .box-body {
   padding: 15px;

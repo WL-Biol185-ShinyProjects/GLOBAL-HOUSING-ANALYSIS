@@ -57,19 +57,23 @@ server <- function(input, output, session) {
   
   # Quick date range buttons
   observeEvent(input$ov_last_year, {
+    start_date <- floor_date(as.Date(latest_month) - years(1), "month")
     updateSliderInput(
       session,
       "ov_date_range",
-      value = c(latest_month - years(1), latest_month)
+      value = c(start_date, latest_month)
     )
+    session$sendCustomMessage("updateSliderFormat", list(id = "ov_date_range"))
   })
   
   observeEvent(input$ov_last_3years, {
+    start_date <- floor_date(as.Date(latest_month) - years(3), "month")
     updateSliderInput(
       session,
       "ov_date_range",
-      value = c(latest_month - years(3), latest_month)
+      value = c(start_date, latest_month)
     )
+    session$sendCustomMessage("updateSliderFormat", list(id = "ov_date_range"))
   })
   
   observeEvent(input$ov_all_time, {
@@ -78,6 +82,7 @@ server <- function(input, output, session) {
       "ov_date_range",
       value = c(earliest_month, latest_month)
     )
+    session$sendCustomMessage("updateSliderFormat", list(id = "ov_date_range"))
   })
   
   # ===========================================================================
@@ -542,27 +547,33 @@ server <- function(input, output, session) {
   # Quick date range buttons
   
   observeEvent(input$re_last_year, {
+    start_date <- floor_date(as.Date(latest_month) - years(1), "month")
     updateSliderInput(
       session,
       "re_date_range",
-      value = c(latest_month - years(1), latest_month)
+      value = c(start_date, latest_month)
     )
+    session$sendCustomMessage("updateSliderFormat", list(id = "re_date_range"))
   })
   
   observeEvent(input$re_last_3years, {
+    start_date <- floor_date(as.Date(latest_month) - years(3), "month")
     updateSliderInput(
       session,
       "re_date_range",
-      value = c(latest_month - years(3), latest_month)
+      value = c(start_date, latest_month)
     )
+    session$sendCustomMessage("updateSliderFormat", list(id = "re_date_range"))
   })
   
   observeEvent(input$re_last_5years, {
+    start_date <- floor_date(as.Date(latest_month) - years(5), "month")
     updateSliderInput(
       session,
       "re_date_range",
-      value = c(latest_month - years(5), latest_month)
+      value = c(start_date, latest_month)
     )
+    session$sendCustomMessage("updateSliderFormat", list(id = "re_date_range"))
   })
   
   observeEvent(input$re_all_time, {
@@ -571,6 +582,7 @@ server <- function(input, output, session) {
       "re_date_range",
       value = c(earliest_month, latest_month)
     )
+    session$sendCustomMessage("updateSliderFormat", list(id = "re_date_range"))
   })
   
   # Filtered data for Region Explorer
@@ -1018,15 +1030,20 @@ server <- function(input, output, session) {
   
   # Quick date range buttons
   observeEvent(input$mh_last_3years, {
-    updateSliderInput(session, "mh_date_range", value = c(latest_month - years(3), latest_month))
+    start_date <- floor_date(as.Date(latest_month) - years(3), "month")
+    updateSliderInput(session, "mh_date_range", value = c(start_date, latest_month))
+    session$sendCustomMessage("updateSliderFormat", list(id = "mh_date_range"))
   })
   
   observeEvent(input$mh_last_5years, {
-    updateSliderInput(session, "mh_date_range", value = c(latest_month - years(5), latest_month))
+    start_date <- floor_date(as.Date(latest_month) - years(5), "month")
+    updateSliderInput(session, "mh_date_range", value = c(start_date, latest_month))
+    session$sendCustomMessage("updateSliderFormat", list(id = "mh_date_range"))
   })
   
   observeEvent(input$mh_all_time, {
     updateSliderInput(session, "mh_date_range", value = c(earliest_month, latest_month))
+    session$sendCustomMessage("updateSliderFormat", list(id = "mh_date_range"))
   })
   
   # Compute market heat data with regime classification
@@ -1313,11 +1330,22 @@ server <- function(input, output, session) {
       filter(regime == "Buyer") %>%
       pull(region)
     
+    # Heat index stats
+    current_heat <- current %>%
+      select(region, heat_index) %>%
+      arrange(desc(heat_index))
+    
+    highest_heat <- current_heat %>% slice(1)
+    lowest_heat <- current_heat %>% slice(n())
+    avg_heat <- round(mean(current$heat_index, na.rm = TRUE), 1)
+    
     date_range <- paste(
       format(min(data$month_end), "%B %Y"),
       "to",
       format(max(data$month_end), "%B %Y")
     )
+    
+    latest_month <- format(max(data$month_end), "%B %Y")
     
     HTML(paste0(
       "<p>Over the period from <strong>", date_range, "</strong>:</p>",
@@ -1335,7 +1363,20 @@ server <- function(input, output, session) {
         )
       } else "",
       "</ul>",
-      "<p><strong>Current Conditions:</strong> ",
+      
+      "<p><strong>Current Heat Index (", latest_month, "):</strong></p>",
+      "<ul style='margin: 10px 0; padding-left: 20px;'>",
+      "<li>Hottest: <strong>", highest_heat$region, "</strong> with a heat index of <strong>", 
+      round(highest_heat$heat_index, 1), "</strong>",
+      if (highest_heat$heat_index >= 67) " (seller-favorable conditions)" else 
+        if (highest_heat$heat_index >= 33) " (balanced conditions)" else " (buyer-favorable conditions)",
+      "</li>",
+      "<li>Coolest: <strong>", lowest_heat$region, "</strong> with a heat index of <strong>", 
+      round(lowest_heat$heat_index, 1), "</strong></li>",
+      "<li>Average across selected regions: <strong>", avg_heat, "</strong></li>",
+      "</ul>",
+      
+      "<p><strong>Market Regime Status:</strong> ",
       if (length(current_hot) > 0) {
         paste0(paste(current_hot, collapse = ", "), " currently in seller's market. ")
       } else {
@@ -1357,14 +1398,19 @@ server <- function(input, output, session) {
   # Quick month buttons
   observeEvent(input$ss_latest, {
     updateSliderInput(session, "ss_month", value = latest_month)
+    session$sendCustomMessage("updateSliderFormat", list(id = "ss_month"))
   })
   
   observeEvent(input$ss_year_ago, {
-    updateSliderInput(session, "ss_month", value = as.Date(latest_month) - years(1))
+    target_date <- floor_date(as.Date(latest_month) - years(1), "month")
+    updateSliderInput(session, "ss_month", value = target_date)
+    session$sendCustomMessage("updateSliderFormat", list(id = "ss_month"))
   })
   
   observeEvent(input$ss_3years_ago, {
-    updateSliderInput(session, "ss_month", value = as.Date(latest_month) - years(3))
+    target_date <- floor_date(as.Date(latest_month) - years(3), "month")
+    updateSliderInput(session, "ss_month", value = target_date)
+    session$sendCustomMessage("updateSliderFormat", list(id = "ss_month"))
   })
   
   # Filtered snapshot data
@@ -1665,10 +1711,13 @@ server <- function(input, output, session) {
   # Quick month buttons
   observeEvent(input$pg_latest, {
     updateSliderInput(session, "pg_month", value = latest_month)
+    session$sendCustomMessage("updateSliderFormat", list(id = "pg_month"))
   })
   
   observeEvent(input$pg_year_ago, {
-    updateSliderInput(session, "pg_month", value = as.Date(latest_month) - years(1))
+    target_date <- floor_date(as.Date(latest_month) - years(1), "month")
+    updateSliderInput(session, "pg_month", value = target_date)
+    session$sendCustomMessage("updateSliderFormat", list(id = "pg_month"))
   })
   
   # Get data for selected region
@@ -1685,7 +1734,8 @@ server <- function(input, output, session) {
     req(input$pg_region)
     req(input$pg_month)
     
-    selected_month <- as.Date(input$pg_month)
+    # Round to the first of the selected month to ensure consistent matching
+    selected_month <- floor_date(as.Date(input$pg_month), "month")
     
     pg_region_data() %>%
       mutate(month_diff = abs(as.numeric(difftime(month_end, selected_month, units = "days")))) %>%

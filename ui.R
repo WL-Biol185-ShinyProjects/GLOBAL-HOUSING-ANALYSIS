@@ -103,6 +103,62 @@ ui <- dashboardPage(
         .content-wrapper, .right-side {
           background-color: #ECF0F1;
         }
+      ")),
+      # JavaScript to fix slider date format
+      tags$script(HTML("
+        $(document).ready(function() {
+          // Function to format date as 'Mon YYYY' using UTC to avoid timezone issues
+          function formatSliderDate(timestamp) {
+            var date = new Date(timestamp);
+            var months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 
+                          'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+            return months[date.getUTCMonth()] + ' ' + date.getUTCFullYear();
+          }
+          
+          // Function to apply formatting to a slider
+          function applyDateFormat(sliderId) {
+            var slider = $('#' + sliderId);
+            var ionSlider = slider.data('ionRangeSlider');
+            if (ionSlider) {
+              ionSlider.update({
+                prettify: function(num) {
+                  return formatSliderDate(num);
+                }
+              });
+            }
+          }
+          
+          // List of all date slider IDs
+          var dateSliders = ['ov_date_range', 're_date_range', 'mh_date_range', 'ss_month', 'pg_month'];
+          
+          // Apply formatting when sliders are initialized
+          // Use MutationObserver to catch when sliders are added to DOM
+          var observer = new MutationObserver(function(mutations) {
+            dateSliders.forEach(function(id) {
+              var slider = $('#' + id);
+              if (slider.length && slider.data('ionRangeSlider') && !slider.data('formatted')) {
+                applyDateFormat(id);
+                slider.data('formatted', true);
+              }
+            });
+          });
+          
+          observer.observe(document.body, { childList: true, subtree: true });
+          
+          // Also try to format on initial load after a delay
+          setTimeout(function() {
+            dateSliders.forEach(function(id) {
+              applyDateFormat(id);
+            });
+          }, 500);
+          
+          // Handler for programmatic updates
+          Shiny.addCustomMessageHandler('updateSliderFormat', function(message) {
+            setTimeout(function() {
+              applyDateFormat(message.id);
+            }, 100);
+          });
+        });
       "))
     ),
     
@@ -1071,8 +1127,97 @@ ui <- dashboardPage(
                   solidHeader = FALSE,
                   width       = NULL,
                   
-                  plotOutput("mh_heat_trend", height = "280px")
+                  # Explanation of heat index
+                  tags$div(
+                    style = "background: #f8f9fa; border-radius: 6px; padding: 10px; margin-bottom: 10px; font-size: 11px; color: #555;",
+                    tags$strong("What is the Heat Index? "),
+                    "A composite score (0-100) measuring market intensity. Higher values indicate seller-favorable conditions ",
+                    "(fast sales, high sale-to-list ratios, rising prices, low inventory). ",
+                    "Lower values indicate buyer-favorable conditions."
+                  ),
+                  
+                  plotOutput("mh_heat_trend", height = "240px"),
+                  
+                  # Legend for the background bands
+                  tags$div(
+                    style = "display: flex; justify-content: center; gap: 15px; margin-top: 8px; font-size: 11px;",
+                    tags$span(
+                      style = "display: flex; align-items: center;",
+                      tags$span(style = "width: 12px; height: 12px; background: rgba(52, 152, 219, 0.3); border-radius: 2px; margin-right: 4px;"),
+                      "Buyer-Friendly (0-33)"
+                    ),
+                    tags$span(
+                      style = "display: flex; align-items: center;",
+                      tags$span(style = "width: 12px; height: 12px; background: rgba(243, 156, 18, 0.3); border-radius: 2px; margin-right: 4px;"),
+                      "Balanced (33-67)"
+                    ),
+                    tags$span(
+                      style = "display: flex; align-items: center;",
+                      tags$span(style = "width: 12px; height: 12px; background: rgba(231, 76, 60, 0.3); border-radius: 2px; margin-right: 4px;"),
+                      "Seller-Friendly (67-100)"
+                    )
+                  )
                 )
+              )
+            ),
+            
+            # Heat Index Components Explanation
+            box(
+              title       = tagList(icon("info-circle"), " Understanding the Heat Index"),
+              status      = "info",
+              solidHeader = FALSE,
+              width       = NULL,
+              collapsible = TRUE,
+              collapsed   = TRUE,
+              
+              fluidRow(
+                column(
+                  width = 3,
+                  tags$div(
+                    style = "text-align: center; padding: 15px; background: #f8f9fa; border-radius: 8px;",
+                    tags$div(style = "font-size: 24px; color: #3498DB; margin-bottom: 5px;", icon("clock")),
+                    tags$div(style = "font-weight: 600; color: #2C3E50; margin-bottom: 5px;", "Days on Market"),
+                    tags$div(style = "font-size: 20px; font-weight: 700; color: #3498DB;", "30%"),
+                    tags$div(style = "font-size: 11px; color: #7F8C8D; margin-top: 5px;", "Faster sales = hotter market")
+                  )
+                ),
+                column(
+                  width = 3,
+                  tags$div(
+                    style = "text-align: center; padding: 15px; background: #f8f9fa; border-radius: 8px;",
+                    tags$div(style = "font-size: 24px; color: #E74C3C; margin-bottom: 5px;", icon("percentage")),
+                    tags$div(style = "font-weight: 600; color: #2C3E50; margin-bottom: 5px;", "Sale-to-List Ratio"),
+                    tags$div(style = "font-size: 20px; font-weight: 700; color: #E74C3C;", "30%"),
+                    tags$div(style = "font-size: 11px; color: #7F8C8D; margin-top: 5px;", "Above 100% = bidding wars")
+                  )
+                ),
+                column(
+                  width = 3,
+                  tags$div(
+                    style = "text-align: center; padding: 15px; background: #f8f9fa; border-radius: 8px;",
+                    tags$div(style = "font-size: 24px; color: #F39C12; margin-bottom: 5px;", icon("warehouse")),
+                    tags$div(style = "font-weight: 600; color: #2C3E50; margin-bottom: 5px;", "Inventory Level"),
+                    tags$div(style = "font-size: 20px; font-weight: 700; color: #F39C12;", "20%"),
+                    tags$div(style = "font-size: 11px; color: #7F8C8D; margin-top: 5px;", "Low inventory = hotter")
+                  )
+                ),
+                column(
+                  width = 3,
+                  tags$div(
+                    style = "text-align: center; padding: 15px; background: #f8f9fa; border-radius: 8px;",
+                    tags$div(style = "font-size: 24px; color: #27AE60; margin-bottom: 5px;", icon("chart-line")),
+                    tags$div(style = "font-weight: 600; color: #2C3E50; margin-bottom: 5px;", "Price Growth (YoY)"),
+                    tags$div(style = "font-size: 20px; font-weight: 700; color: #27AE60;", "20%"),
+                    tags$div(style = "font-size: 11px; color: #7F8C8D; margin-top: 5px;", "Rising prices = hotter")
+                  )
+                )
+              ),
+              
+              tags$div(
+                style = "margin-top: 15px; padding: 12px; background: #e8f4fd; border-radius: 6px; font-size: 12px; color: #2C3E50;",
+                icon("lightbulb", style = "color: #3498DB; margin-right: 8px;"),
+                "The Heat Index is calculated by ranking each month within its region's historical distribution for each component, ",
+                "then combining them using the weights shown above. A score of 50 represents typical conditions for that region."
               )
             ),
             
@@ -1426,11 +1571,12 @@ ui <- dashboardPage(
       ),
       
       # =====================================================================
-      # TAB 6: METHODS (Placeholder)
+      # TAB 6: METHODS & LIMITATIONS
       # =====================================================================
       tabItem(
         tabName = "methods",
         
+        # Page title
         fluidRow(
           column(
             width = 12,
@@ -1441,18 +1587,364 @@ ui <- dashboardPage(
             ),
             tags$p(
               style = "color: #7F8C8D; margin-bottom: 20px;",
-              "Documentation of data sources, transformations, and limitations"
+              "Documentation of data sources, transformations, and analytical approaches"
             )
           )
         ),
         
         fluidRow(
-          box(
-            width       = 12,
-            status      = "primary",
-            solidHeader = TRUE,
-            title       = "Coming Soon",
-            tags$p("This tab will be implemented in the next iteration.")
+          # Left column
+          column(
+            width = 6,
+            
+            # 1. Data Source and Coverage
+            box(
+              title       = tagList(icon("database"), " Data Source & Coverage"),
+              status      = "primary",
+              solidHeader = TRUE,
+              width       = NULL,
+              
+              tags$div(
+                style = "line-height: 1.7;",
+                
+                tags$h4(style = "color: #2C3E50; margin-top: 0;", "Source"),
+                tags$p(
+                  "This dashboard uses ",
+                  tags$a(href = "https://www.redfin.com/news/data-center/", target = "_blank", "Redfin Monthly Housing Market Data"),
+                  ", a publicly available dataset compiled by Redfin, a national real estate brokerage."
+                ),
+                
+                tags$h4(style = "color: #2C3E50;", "Geographic Coverage"),
+                tags$p("The dataset includes the following regions:"),
+                tags$ul(
+                  style = "padding-left: 20px;",
+                  tags$li(tags$strong("National"), " — Aggregate U.S. housing market"),
+                  tags$li(tags$strong("Boston, MA"), " metro area"),
+                  tags$li(tags$strong("Chicago, IL"), " metro area"),
+                  tags$li(tags$strong("Los Angeles, CA"), " metro area"),
+                  tags$li(tags$strong("Philadelphia, PA"), " metro area"),
+                  tags$li(tags$strong("Seattle, WA"), " metro area"),
+                  tags$li(tags$strong("Washington, DC"), " metro area")
+                ),
+                
+                tags$h4(style = "color: #2C3E50;", "Time Coverage"),
+                tags$p(
+                  "The data spans from ",
+                  tags$strong(format(earliest_month, "%B %Y")),
+                  " to ",
+                  tags$strong(format(latest_month, "%B %Y")),
+                  "."
+                ),
+                
+                tags$h4(style = "color: #2C3E50;", "Unit of Observation"),
+                tags$p(
+                  "Each row represents a ",
+                  tags$strong("Region–Month aggregate"),
+                  ", not individual properties. All metrics are aggregated statistics for all transactions ",
+                  "in that region during that month."
+                )
+              )
+            ),
+            
+            # 2. Key Variables
+            box(
+              title       = tagList(icon("list"), " Key Variables Used"),
+              status      = "info",
+              solidHeader = TRUE,
+              width       = NULL,
+              
+              tags$div(
+                style = "line-height: 1.7;",
+                
+                tags$table(
+                  style = "width: 100%; border-collapse: collapse;",
+                  tags$thead(
+                    tags$tr(
+                      style = "background: #f8f9fa; border-bottom: 2px solid #ddd;",
+                      tags$th(style = "padding: 10px; text-align: left;", "Variable"),
+                      tags$th(style = "padding: 10px; text-align: left;", "Definition")
+                    )
+                  ),
+                  tags$tbody(
+                    tags$tr(
+                      style = "border-bottom: 1px solid #eee;",
+                      tags$td(style = "padding: 10px; font-weight: 600;", "Median Sale Price"),
+                      tags$td(style = "padding: 10px;", "The median final sale price of homes sold in the region during the month.")
+                    ),
+                    tags$tr(
+                      style = "border-bottom: 1px solid #eee;",
+                      tags$td(style = "padding: 10px; font-weight: 600;", "Homes Sold"),
+                      tags$td(style = "padding: 10px;", "Total number of home sales that closed during the month.")
+                    ),
+                    tags$tr(
+                      style = "border-bottom: 1px solid #eee;",
+                      tags$td(style = "padding: 10px; font-weight: 600;", "New Listings"),
+                      tags$td(style = "padding: 10px;", "Number of new properties listed for sale during the month.")
+                    ),
+                    tags$tr(
+                      style = "border-bottom: 1px solid #eee;",
+                      tags$td(style = "padding: 10px; font-weight: 600;", "Inventory"),
+                      tags$td(style = "padding: 10px;", "Total active listings available at month end.")
+                    ),
+                    tags$tr(
+                      style = "border-bottom: 1px solid #eee;",
+                      tags$td(style = "padding: 10px; font-weight: 600;", "Days on Market"),
+                      tags$td(style = "padding: 10px;", "Median number of days from listing to contract for homes sold.")
+                    ),
+                    tags$tr(
+                      style = "border-bottom: 1px solid #eee;",
+                      tags$td(style = "padding: 10px; font-weight: 600;", "Avg. Sale-to-List"),
+                      tags$td(style = "padding: 10px;", "Average ratio of final sale price to listing price (e.g., 100% = sold at asking, >100% = sold above asking).")
+                    ),
+                    tags$tr(
+                      tags$td(style = "padding: 10px; font-weight: 600;", "MoM / YoY Changes"),
+                      tags$td(style = "padding: 10px;", "Month-over-month and year-over-year percentage changes. These are pre-computed fields provided by Redfin.")
+                    )
+                  )
+                )
+              )
+            ),
+            
+            # 3. Derived Indicators
+            box(
+              title       = tagList(icon("calculator"), " Derived Indicators"),
+              status      = "info",
+              solidHeader = TRUE,
+              width       = NULL,
+              
+              tags$div(
+                style = "line-height: 1.7;",
+                
+                tags$p("The following metrics are calculated within this dashboard:"),
+                
+                tags$div(
+                  style = "background: #f8f9fa; padding: 15px; border-radius: 8px; margin-bottom: 15px;",
+                  tags$h5(style = "margin-top: 0; color: #2C3E50;", "Tightness Ratio"),
+                  tags$p(style = "margin-bottom: 5px;", tags$code("Homes Sold ÷ New Listings")),
+                  tags$p(style = "font-size: 13px; color: #666; margin-bottom: 0;",
+                         "Values > 1 indicate demand exceeds new supply; values < 1 indicate supply exceeds immediate demand."
+                  )
+                ),
+                
+                tags$div(
+                  style = "background: #f8f9fa; padding: 15px; border-radius: 8px; margin-bottom: 15px;",
+                  tags$h5(style = "margin-top: 0; color: #2C3E50;", "Approximate Months' Supply"),
+                  tags$p(style = "margin-bottom: 5px;", tags$code("Inventory ÷ Homes Sold")),
+                  tags$p(style = "font-size: 13px; color: #666; margin-bottom: 0;",
+                         "Estimates how many months it would take to sell all current inventory at the current sales pace. ",
+                         "Lower values indicate tighter markets."
+                  )
+                ),
+                
+                tags$div(
+                  style = "background: #fff3e0; padding: 15px; border-radius: 8px; border-left: 4px solid #F39C12;",
+                  tags$h5(style = "margin-top: 0; color: #2C3E50;", "Heat Index (0–100)"),
+                  tags$p(style = "margin-bottom: 10px;",
+                         "A composite score measuring overall market intensity. Calculated by combining four components, ",
+                         "each expressed as a percentile within that region's historical distribution:"
+                  ),
+                  tags$ul(
+                    style = "padding-left: 20px; margin-bottom: 10px;",
+                    tags$li(tags$strong("Days on Market (30%)"), " — Lower DOM → higher score"),
+                    tags$li(tags$strong("Sale-to-List Ratio (30%)"), " — Higher ratio → higher score"),
+                    tags$li(tags$strong("Inventory (20%)"), " — Lower inventory → higher score"),
+                    tags$li(tags$strong("Price YoY Change (20%)"), " — Higher growth → higher score")
+                  ),
+                  tags$p(style = "font-size: 13px; color: #666; margin-bottom: 0;",
+                         "A score of 50 represents typical conditions for that region. Scores above 67 suggest ",
+                         "seller-favorable conditions; scores below 33 suggest buyer-favorable conditions."
+                  )
+                )
+              )
+            )
+          ),
+          
+          # Right column
+          column(
+            width = 6,
+            
+            # 4. Regime Classification
+            box(
+              title       = tagList(icon("tags"), " Market Regime Classification"),
+              status      = "primary",
+              solidHeader = TRUE,
+              width       = NULL,
+              
+              tags$div(
+                style = "line-height: 1.7;",
+                
+                tags$p("Markets are classified into three regimes based on the following rules:"),
+                
+                tags$div(
+                  style = "background: #ffebee; padding: 15px; border-radius: 8px; margin-bottom: 12px; border-left: 4px solid #E74C3C;",
+                  tags$h5(style = "margin-top: 0; color: #E74C3C;", icon("fire"), " Seller's Market"),
+                  tags$p(style = "margin-bottom: 0;",
+                         "Classified when ", tags$strong("both"), " conditions are met:",
+                         tags$ul(
+                           style = "margin-top: 5px; margin-bottom: 0;",
+                           tags$li("Sale-to-List Ratio ≥ 100%"),
+                           tags$li("Days on Market in the bottom third (fastest 33%) for that region")
+                         )
+                  )
+                ),
+                
+                tags$div(
+                  style = "background: #e3f2fd; padding: 15px; border-radius: 8px; margin-bottom: 12px; border-left: 4px solid #3498DB;",
+                  tags$h5(style = "margin-top: 0; color: #3498DB;", icon("snowflake"), " Buyer's Market"),
+                  tags$p(style = "margin-bottom: 0;",
+                         "Classified when ", tags$strong("either"), " condition is met:",
+                         tags$ul(
+                           style = "margin-top: 5px; margin-bottom: 0;",
+                           tags$li("Sale-to-List Ratio < 99%"),
+                           tags$li("Days on Market in the top third (slowest 33%) for that region")
+                         )
+                  )
+                ),
+                
+                tags$div(
+                  style = "background: #fff8e1; padding: 15px; border-radius: 8px; border-left: 4px solid #F39C12;",
+                  tags$h5(style = "margin-top: 0; color: #F39C12;", icon("balance-scale"), " Neutral Market"),
+                  tags$p(style = "margin-bottom: 0;",
+                         "All other conditions — neither strongly favoring buyers nor sellers."
+                  )
+                )
+              )
+            ),
+            
+            # 5. Pricing Context Methodology
+            box(
+              title       = tagList(icon("dollar-sign"), " Pricing Context Methodology"),
+              status      = "success",
+              solidHeader = TRUE,
+              width       = NULL,
+              
+              tags$div(
+                style = "line-height: 1.7;",
+                
+                tags$p(
+                  "The ", tags$strong("Pricing Guidance"), " tab provides a contextual price range based on current market conditions. ",
+                  "This is ", tags$strong("not"), " a property-specific appraisal — it is a heuristic range anchored to regional medians."
+                ),
+                
+                tags$h5(style = "color: #2C3E50;", "How the Range is Constructed"),
+                
+                tags$ol(
+                  style = "padding-left: 20px;",
+                  tags$li(
+                    tags$strong("Base: "), "The Median Sale Price for the selected region and month."
+                  ),
+                  tags$li(
+                    tags$strong("Market Assessment: "), "Using Sale-to-List Ratio and Days on Market (as percentiles within that region's history), ",
+                    "the market is classified as Hot, Neutral, or Cool."
+                  ),
+                  tags$li(
+                    tags$strong("Range Adjustment: "),
+                    tags$ul(
+                      style = "margin-top: 5px;",
+                      tags$li(tags$span(style = "color: #E74C3C;", "Hot Market: "), "100% – 105% of median"),
+                      tags$li(tags$span(style = "color: #F39C12;", "Neutral Market: "), "98% – 102% of median"),
+                      tags$li(tags$span(style = "color: #3498DB;", "Cool Market: "), "95% – 100% of median")
+                    )
+                  )
+                ),
+                
+                tags$div(
+                  style = "background: #e8f5e9; padding: 12px; border-radius: 6px; margin-top: 15px;",
+                  icon("info-circle", style = "color: #27AE60; margin-right: 8px;"),
+                  tags$span(style = "font-size: 13px;",
+                            "In hotter markets, the range shifts above the median (reflecting competitive conditions). ",
+                            "In cooler markets, the range centers at or below the median (reflecting negotiating room)."
+                  )
+                )
+              )
+            ),
+            
+            # 6. Limitations
+            box(
+              title       = tagList(icon("exclamation-triangle"), " Limitations"),
+              status      = "warning",
+              solidHeader = TRUE,
+              width       = NULL,
+              
+              tags$div(
+                style = "line-height: 1.7;",
+                
+                tags$div(
+                  style = "background: #fff8e1; padding: 12px; border-radius: 6px; margin-bottom: 12px;",
+                  tags$h5(style = "margin-top: 0; color: #F39C12;", icon("layer-group"), " Aggregation"),
+                  tags$p(style = "margin-bottom: 0; font-size: 13px;",
+                         "Data is at the regional level, which masks significant variation across neighborhoods, ",
+                         "property types (single-family vs. condo), property sizes, and conditions."
+                  )
+                ),
+                
+                tags$div(
+                  style = "background: #fff8e1; padding: 12px; border-radius: 6px; margin-bottom: 12px;",
+                  tags$h5(style = "margin-top: 0; color: #F39C12;", icon("clock"), " Temporal Resolution"),
+                  tags$p(style = "margin-bottom: 0; font-size: 13px;",
+                         "Monthly aggregates may miss very short-term market swings or rapid changes ",
+                         "occurring within a month."
+                  )
+                ),
+                
+                tags$div(
+                  style = "background: #fff8e1; padding: 12px; border-radius: 6px; margin-bottom: 12px;",
+                  tags$h5(style = "margin-top: 0; color: #F39C12;", icon("ban"), " Factors Not Included"),
+                  tags$p(style = "margin-bottom: 0; font-size: 13px;",
+                         "The dataset does not include mortgage interest rates, income levels, employment data, ",
+                         "local zoning changes, school quality, or other factors that significantly influence housing markets."
+                  )
+                ),
+                
+                tags$div(
+                  style = "background: #fff8e1; padding: 12px; border-radius: 6px;",
+                  tags$h5(style = "margin-top: 0; color: #F39C12;", icon("map-marker-alt"), " Regional Boundaries"),
+                  tags$p(style = "margin-bottom: 0; font-size: 13px;",
+                         "Metro area definitions are determined by Redfin and may not align exactly with ",
+                         "official Census metropolitan statistical areas (MSAs)."
+                  )
+                )
+              )
+            ),
+            
+            # 7. How to Interpret
+            box(
+              title       = tagList(icon("lightbulb"), " How to Interpret This Dashboard"),
+              status      = "success",
+              solidHeader = TRUE,
+              width       = NULL,
+              
+              tags$div(
+                style = "line-height: 1.7;",
+                
+                tags$p(tags$strong("Users should treat the outputs as:")),
+                
+                tags$ul(
+                  style = "padding-left: 20px;",
+                  tags$li(
+                    tags$strong("Comparative indicators"), " — useful for understanding relative market tightness ",
+                    "and price trends across regions and over time."
+                  ),
+                  tags$li(
+                    tags$strong("Contextual ranges"), " — the pricing guidance provides a starting point grounded in ",
+                    "regional medians and metric-based heuristics, not exact valuations for any specific property."
+                  ),
+                  tags$li(
+                    tags$strong("Directional signals"), " — the Heat Index and regime classifications help identify ",
+                    "whether conditions favor buyers or sellers, but do not predict future changes."
+                  )
+                ),
+                
+                tags$div(
+                  style = "background: #e3f2fd; padding: 15px; border-radius: 8px; margin-top: 15px;",
+                  icon("user-tie", style = "color: #3498DB; margin-right: 8px;"),
+                  tags$span(
+                    "For property-specific guidance, consult a licensed real estate professional or appraiser ",
+                    "who can evaluate the unique characteristics of the property and its micro-location."
+                  )
+                )
+              )
+            )
           )
         )
       )

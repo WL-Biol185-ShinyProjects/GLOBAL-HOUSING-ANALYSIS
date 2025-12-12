@@ -96,12 +96,17 @@ server <- function(input, output, session) {
     selected_regions <- setdiff(input$ov_regions, "(All)")
     req(length(selected_regions) > 0)
     
+    # Ensure dates are Date objects
+    date_start <- as.Date(input$ov_date_range[1])
+    date_end <- as.Date(input$ov_date_range[2])
+    
     redfin %>%
       filter(
         region %in% selected_regions,
-        month_end >= input$ov_date_range[1],
-        month_end <= input$ov_date_range[2]
+        month_end >= date_start,
+        month_end <= date_end
       ) %>%
+      mutate(month_end = as.Date(month_end)) %>%
       arrange(region, month_end)
   })
   
@@ -590,12 +595,17 @@ server <- function(input, output, session) {
     req(input$re_regions)
     req(length(input$re_regions) > 0)
     
+    # Ensure dates are Date objects
+    date_start <- as.Date(input$re_date_range[1])
+    date_end <- as.Date(input$re_date_range[2])
+    
     redfin %>%
       filter(
         region %in% input$re_regions,
-        month_end >= input$re_date_range[1],
-        month_end <= input$re_date_range[2]
+        month_end >= date_start,
+        month_end <= date_end
       ) %>%
+      mutate(month_end = as.Date(month_end)) %>%
       arrange(region, month_end)
   })
   
@@ -1051,13 +1061,18 @@ server <- function(input, output, session) {
     req(input$mh_regions)
     req(length(input$mh_regions) > 0)
     
+    # Get date range and ensure they are Date objects
+    date_start <- as.Date(input$mh_date_range[1])
+    date_end <- as.Date(input$mh_date_range[2])
+    
     # Filter data
     data <- redfin %>%
       filter(
         region %in% input$mh_regions,
-        month_end >= input$mh_date_range[1],
-        month_end <= input$mh_date_range[2]
-      )
+        month_end >= date_start,
+        month_end <= date_end
+      ) %>%
+      mutate(month_end = as.Date(month_end))
     
     # Calculate percentile thresholds for each region
     data <- data %>%
@@ -1990,7 +2005,7 @@ server <- function(input, output, session) {
     y_max <- max(mc$upper_bound * 1.05, max(recent_data$median_sale_price, na.rm = TRUE) * 1.05)
     
     # Build plot directly in plotly
-    ply <- plot_ly() %>%
+    ply <- plot_ly(source = "pg_context_chart") %>%
       # Add the range band first (so it's behind everything)
       add_ribbons(
         x = recent_data$month_end,
@@ -2020,7 +2035,8 @@ server <- function(input, output, session) {
         hoverinfo = "text",
         text = other_tooltips,
         name = "Monthly Data",
-        showlegend = FALSE
+        showlegend = FALSE,
+        customdata = as.character(other_points$month_end)
       ) %>%
       # Add the current month point (highlighted)
       add_markers(
@@ -2034,7 +2050,8 @@ server <- function(input, output, session) {
         hoverinfo = "text",
         text = current_tooltip,
         name = "Selected Month",
-        showlegend = FALSE
+        showlegend = FALSE,
+        customdata = as.character(current_point$month_end)
       ) %>%
       # Layout
       layout(
@@ -2070,9 +2087,26 @@ server <- function(input, output, session) {
         plot_bgcolor = "white",
         paper_bgcolor = "white"
       ) %>%
-      config(displayModeBar = FALSE)
+      config(displayModeBar = FALSE) %>%
+      event_register("plotly_click") %>%
+      htmlwidgets::onRender("
+        function(el, x) {
+          el.on('plotly_click', function(data) {
+            if (data.points && data.points[0] && data.points[0].customdata) {
+              Shiny.setInputValue('pg_chart_click', data.points[0].customdata, {priority: 'event'});
+            }
+          });
+        }
+      ")
     
     ply
+  })
+  
+  # Observer to handle clicks on the price chart via JavaScript
+  observeEvent(input$pg_chart_click, {
+    clicked_date <- as.Date(input$pg_chart_click)
+    updateSliderInput(session, "pg_month", value = clicked_date)
+    session$sendCustomMessage("updateSliderFormat", list(id = "pg_month"))
   })
   
   # Interpretation text

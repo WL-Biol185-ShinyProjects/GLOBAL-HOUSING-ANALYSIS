@@ -382,9 +382,14 @@ ui <- dashboardPage(
                   tags$strong("Cross-Section Snapshot"), " – Point-in-time comparisons"
                 ),
                 tags$li(
-                  style = "padding: 8px 0;",
+                  style = "padding: 8px 0; border-bottom: 1px solid #eee;",
                   icon("dollar-sign", style = "color: #F39C12; margin-right: 10px; width: 20px;"),
                   tags$strong("Pricing Guidance"), " – Context-based pricing ranges"
+                ),
+                tags$li(
+                  style = "padding: 8px 0;",
+                  icon("book", style = "color: #7F8C8D; margin-right: 10px; width: 20px;"),
+                  tags$strong("Methods & Limitations"), " – Data sources and methodology"
                 )
               )
             )
@@ -557,7 +562,8 @@ ui <- dashboardPage(
                   `live-search`       = TRUE,
                   `selected-text-format` = "count > 2",
                   `count-selected-text`  = "{0} regions selected",
-                  style               = "btn-outline-primary"
+                  style               = "btn-outline-primary",
+                  size                = 10
                 )
               ),
               
@@ -1550,6 +1556,14 @@ ui <- dashboardPage(
               status      = "primary",
               solidHeader = TRUE,
               width       = NULL,
+              
+              # Tip about clicking
+              tags$div(
+                style = "background: #e8f4fd; border-radius: 6px; padding: 10px; margin-bottom: 15px; font-size: 12px; color: #2C3E50;",
+                icon("hand-pointer", style = "color: #3498DB; margin-right: 8px;"),
+                tags$strong("Tip: "),
+                "Click any point on the chart to jump to that month."
+              ),
               
               plotlyOutput("pg_context_chart", height = "350px")
             ),
